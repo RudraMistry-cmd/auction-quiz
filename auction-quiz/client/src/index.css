@@ -1,0 +1,383 @@
+/**
+ * index.css - Global styles for the auction quiz client
+ */
+.app {
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: #f8f9fa;
+  color: #333;
+}
+
+.app-header {
+  background: #2c3e50;
+  color: white;
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.app-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.app-content section {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Register Form */
+.register-form {
+  max-width: 400px;
+}
+
+.register-form h2 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.register-form .error {
+  background: #fee2e2;
+  color: #c53030;
+  padding: 0.5rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px #bfdbfe;
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 0.875rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 1rem;
+  transition: background 0.2s;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.submit-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* Team Screen */
+.team-screen .screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.team-screen .team-badge {
+  background: #3b82f6;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+}
+
+.team-screen .team-main {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.bid-info {
+  padding: 1rem;
+  background: #f1f5f9;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.current-bid {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #3b82f6;
+}
+
+.leading-team {
+  margin-top: 0.5rem;
+  color: #6b7280;
+}
+
+.countdown-timer {
+  padding: 0.75rem;
+  background: #e2e8f0;
+  border-radius: 6px;
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #dc2626;
+}
+
+.bid-area {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.bid-area p {
+  margin-bottom: 0.5rem;
+  color: #6b7280;
+}
+
+.bid-area kbd {
+  background: #e5e7eb;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  margin: 0 4px;
+}
+
+.bid-btn {
+  padding: 0.875rem 2rem;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.bid-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
+.bid-result {
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-top: 1rem;
+  text-align: center;
+  font-weight: 500;
+}
+
+.bid-result.success {
+  background: #d1e7dd;
+  color: #055a00;
+}
+
+.bid-result.error {
+  background: #fecaca;
+  color: #991b1b;
+}
+
+/* Admin Screen */
+.admin-screen .screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.admin-main {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .admin-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.scoreboard-table {
+  width: 100%;
+}
+
+.scoreboard-table h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1rem;
+  color: #6b7280;
+}
+
+.scoreboard-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.scoreboard-table th,
+.scoreboard-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+
+.scoreboard-table th {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.scoreboard-table tr:hover {
+  background: #f9f9f9;
+}
+
+.auction-control {
+  margin-bottom: 1.5rem;
+}
+
+.start-btn {
+  padding: 0.75rem 1.5rem;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.start-btn:hover:not(:disabled) {
+  background: #d97706;
+}
+
+.start-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.auction-details {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.active-auction {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.display-screen {
+  text-align: center;
+  padding: 3rem;
+}
+
+.display-screen p {
+  color: #6b7280;
+}
+
+/* Display Screen */
+.display-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.current-bid-display {
+  margin: 2rem 0;
+}
+
+.bid-number {
+  font-size: 4rem;
+  font-weight: bold;
+  color: #3b82f6;
+  line-height: 1;
+}
+
+.bid-label {
+  font-size: 1rem;
+  color: #6b7280;
+  margin-top: 0.5rem;
+}
+
+.leading-team-display {
+  margin: 1.5rem 0;
+  font-size: 1.5rem;
+  color: #10b981;
+}
+
+.leading-team-display .team-name {
+  font-weight: bold;
+  color: #333;
+}
+
+.leading-team-display .team-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.timer-display {
+  margin: 1.5rem 0;
+  font-size: 1.25rem;
+  color: #dc2626;
+}
+
+.timer-number {
+  font-weight: bold;
+  color: #333;
+}
+
+.timer-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.winner-display {
+  margin-top: 2rem;
+  padding: 2rem;
+  background: #d1e7dd;
+  border-radius: 8px;
+}
+
+.winner-team {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #055a00;
+}
+
+.winner-bid {
+  margin-top: 0.5rem;
+  font-size: 1.5rem;
+  color: #055a00;
+}

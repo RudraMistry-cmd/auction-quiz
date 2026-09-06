@@ -1,0 +1,116 @@
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { useState } from "react";
+import TeamScreen from "./pages/TeamScreen";
+import AdminScreen from "./pages/AdminScreen";
+import DisplayScreen from "./pages/DisplayScreen";
+import LiveAuctionScreen from "./pages/LiveAuctionScreen";
+import ScoreboardScreen from "./pages/ScoreboardScreen";
+import { colors, fontFamily } from "./theme";
+import "./App.css";
+
+function App() {
+  const [sessionToken, setSessionToken] = useState<string | null>(
+    () => localStorage.getItem("sessionToken")
+  );
+
+  const handleLogout = () => {
+    localStorage.removeItem("sessionToken");
+    localStorage.removeItem("teamId");
+    setSessionToken(null);
+  };
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route
+          path="/team"
+          element={<TeamScreen sessionToken={sessionToken} onLogout={handleLogout} />}
+        />
+        <Route path="/admin" element={<AdminScreen />} />
+        <Route path="/display" element={<DisplayChooser />} />
+        <Route path="/display/live" element={<LiveAuctionScreen />} />
+        <Route path="/display/scores" element={<ScoreboardScreen />} />
+        <Route path="/display/legacy" element={<DisplayScreen />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function NotFound() {
+  return (
+    <div style={styles.home}>
+      <h1 style={styles.homeTitle}>Page not found</h1>
+      <p style={{ color: colors.muted }}>
+        API endpoints live on the server (:3000), not here. Pick a screen:
+      </p>
+      <div style={styles.links}>
+        <Link to="/team" style={styles.link}>Team</Link>
+        <Link to="/admin" style={styles.link}>Admin</Link>
+        <Link to="/display" style={styles.link}>Display</Link>
+      </div>
+    </div>
+  );
+}
+
+function DisplayChooser() {
+  return (
+    <div style={styles.home}>
+      <h1 style={styles.homeTitle}>Projector Displays</h1>
+      <div style={styles.links}>
+        <Link to="/display/live" style={styles.link}>Display 1 — Live Auction</Link>
+        <Link to="/display/scores" style={styles.link}>Display 2 — Scoreboard</Link>
+      </div>
+    </div>
+  );
+}
+
+function Home() {
+  return (
+    <div style={styles.home}>
+      <h1 style={styles.homeTitle}>Auction Quiz</h1>
+      <div style={styles.links}>
+        <Link to="/team" style={styles.link}>Team</Link>
+        <Link to="/admin" style={styles.link}>Admin</Link>
+        <Link to="/display/live" style={styles.link}>Display 1 — Live</Link>
+        <Link to="/display/scores" style={styles.link}>Display 2 — Scores</Link>
+      </div>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  home: {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+    color: colors.ink,
+    fontFamily,
+    gap: "2rem",
+  },
+  homeTitle: {
+    fontSize: "3rem",
+    fontWeight: 800,
+    color: colors.gold,
+  },
+  links: {
+    display: "flex",
+    gap: "1.5rem",
+  },
+  link: {
+    padding: "1rem 2rem",
+    borderRadius: "0.75rem",
+    backgroundColor: colors.surface,
+    color: colors.ink,
+    textDecoration: "none",
+    fontSize: "1.125rem",
+    fontWeight: "bold",
+    border: `1px solid ${colors.surfaceBorder}`,
+  },
+};
+
+export default App;

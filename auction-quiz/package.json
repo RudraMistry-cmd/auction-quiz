@@ -1,0 +1,20 @@
+{
+  "name": "auction-quiz",
+  "version": "1.0.0",
+  "description": "- `server/` - backend - `client/` - frontend - `shared/` - types shared between frontend/backend - `docs/` - documentation",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3",
+    "sqlite3": "^6.0.1",
+    "uuid": "^14.0.2"
+  }
+}
