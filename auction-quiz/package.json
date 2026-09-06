@@ -1,20 +1,13 @@
 {
   "name": "auction-quiz",
   "version": "1.0.0",
-  "description": "- `server/` - backend - `client/` - frontend - `shared/` - types shared between frontend/backend - `docs/` - documentation",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
+  "description": "Realtime LAN-based auction quiz system for college events",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently --names \"server,client\" --prefix-colors \"green,cyan\" \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host\"",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
   },
-  "keywords": [],
-  "type": "commonjs",
-  "dependencies": {
-    "express": "^5.2.1",
-    "socket.io": "^4.8.3",
-    "sqlite3": "^6.0.1",
-    "uuid": "^14.0.2"
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   }
 }
