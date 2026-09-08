@@ -3,7 +3,10 @@ import { getDb, persistDb } from "../db/database";
 import { stateManager } from "./phase.service";
 import { taskService } from "./task.service";
 import { questionService } from "./question.service";
+import { manualTimerService } from "./manual-timer.service";
 import type { Auction, Bid, QuestionPayload, Task } from "../types";
+
+const ALLOWED_INCREMENTS = [20, 50];
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
   const stmt = db.prepare(sql);
@@ -118,14 +121,8 @@ export class AuctionService {
       // State machine: auctions may only start from idle (never mid-task).
       stateManager.beginAuction(auctionId);
 
-      // Atomic take AFTER the transition: a reselect racing us either won
-      // the question lock first (we attach its pick) or fails its phase
-      // check now. On empty take, compensate the transition we just made.
+      // Images are now set separately via admin:set_question_image
       const selected = await questionService.takeSelection();
-      if (!selected) {
-        stateManager.auctionClosedIdle(auctionId);
-        throw new Error("Select a question from the bank first");
-      }
 
       const db = await getDb();
       this.seqCounter++;
@@ -133,10 +130,10 @@ export class AuctionService {
       const endAt = Date.now() + config.duration * 1000;
 
       run(db, `
-        INSERT INTO auctions (auctionId, seqNo, startBid, increment, duration, status, endAt, question, defaultReward, questionId)
-        VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+        INSERT INTO auctions (auctionId, seqNo, startBid, increment, duration, status, endAt, question, defaultReward, questionId, time_limit)
+        VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
       `, [auctionId, this.seqCounter, config.startBid, config.increment, config.duration, endAt,
-          selected.question_text, selected.reward_points, selected.id]);
+          "", 1, "", 300]);
       persistDb();
 
       this.activeAuction = {
@@ -148,9 +145,10 @@ export class AuctionService {
         status: "active",
         endAt,
         winnerId: null,
-        question: selected.question_text,
-        defaultReward: selected.reward_points,
-        questionId: selected.id,
+        question: "",
+        defaultReward: 1,
+        questionId: "",
+        time_limit: 300,
         created_at: new Date().toISOString(),
       };
 
@@ -160,16 +158,21 @@ export class AuctionService {
 
   async placeBid(
     teamId: string,
-    auctionId: string
+    auctionId: string,
+    increment: number
   ): Promise<{ success: true; bid: Bid; nextBid: number } | { success: false; error: string }> {
     // Queue behind any in-flight bid so read-compute-write is atomic.
-    return this.withLock(() => this.processBid(teamId, auctionId));
+    return this.withLock(() => this.processBid(teamId, auctionId, increment));
   }
 
   private async processBid(
     teamId: string,
-    auctionId: string
+    auctionId: string,
+    increment: number
   ): Promise<{ success: true; bid: Bid; nextBid: number } | { success: false; error: string }> {
+    if (!ALLOWED_INCREMENTS.includes(increment)) {
+      return { success: false, error: `Invalid increment. Must be ${ALLOWED_INCREMENTS.join(" or ")}.` };
+    }
     if (stateManager.getPhase() !== "auction") {
       return { success: false, error: "No live auction right now" };
     }
@@ -201,7 +204,7 @@ export class AuctionService {
     }
 
     const currentBid = await this.getCurrentBid(auctionId);
-    const nextBid = currentBid + this.activeAuction.increment;
+    const nextBid = currentBid + increment;
 
     const team = queryOne(db, `
       SELECT bid_coins FROM teams WHERE teamId = ?
@@ -293,6 +296,15 @@ export class AuctionService {
     }
     persistDb();
 
+    const questionId = this.activeAuction.questionId;
+    if (questionId) {
+      try {
+        await questionService.markQuestionUsed(questionId);
+      } catch (err) {
+        console.error(`[AuctionService] Failed to mark question ${questionId} as used:`, err);
+      }
+    }
+
     const result = {
       auction: { ...this.activeAuction, status: "completed" as const, winnerId },
       winner: lastBid ? { teamId: lastBid.teamId, teamName: lastBid.teamName } : null,
@@ -364,12 +376,15 @@ export class AuctionService {
     activeTask?: (Task & { timeLeft: number }) | null;
     activeQuestion?: QuestionPayload | null;
     upcomingQuestion?: QuestionPayload | null;
+    currentQuestionImage?: string | null;
+    manualTimer?: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number };
   }> {
     const db = await getDb();
     const auction = this.getActiveAuction();
     const taskState = await taskService.getTaskState();
     const selected = await questionService.getSelected();
     const upcomingQuestion = selected ? questionService.toPayload(selected) : null;
+    const currentQuestionImage = stateManager.getQuestionImage();
 
     if (auction) {
       const lastBid = queryOne(db, `
@@ -403,6 +418,8 @@ export class AuctionService {
         activeTask: taskState.task,
         activeQuestion,
         upcomingQuestion,
+        currentQuestionImage,
+        manualTimer: manualTimerService.getState(),
       };
     }
 
@@ -415,7 +432,7 @@ export class AuctionService {
       LIMIT 1
     `);
     if (!last || !last.winnerId) {
-      return { auction: null, lastResult: null, phase: taskState.phase, activeTask: taskState.task, upcomingQuestion };
+      return { auction: null, lastResult: null, phase: taskState.phase, activeTask: taskState.task, upcomingQuestion, currentQuestionImage, manualTimer: manualTimerService.getState() };
     }
     const winBid = queryOne(db, `
       SELECT amount FROM bids WHERE auctionId = ? ORDER BY seqNo DESC LIMIT 1
@@ -426,6 +443,8 @@ export class AuctionService {
       phase: taskState.phase,
       activeTask: taskState.task,
       upcomingQuestion,
+      currentQuestionImage,
+      manualTimer: manualTimerService.getState(),
     };
   }
 }

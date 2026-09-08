@@ -1,9 +1,12 @@
 import { colors, fontFamily, label, tabular } from "../theme";
 
 interface QuestionViewProps {
-  text: string | null | undefined;
+  text?: string | null | undefined;
+  template_html?: string | null | undefined;
+  rendered_html?: string | null | undefined;
   options?: unknown[] | Record<string, unknown> | null;
   reward?: number | null;
+  timeLimit?: number | null;
   /** Compact variant for side panels (admin). Full size for stage/team. */
   compact?: boolean;
   /** Override the internal scroll cap (default 46vh, 30vh compact). */
@@ -35,14 +38,21 @@ function textTier(totalLen: number, compact?: boolean): React.CSSProperties {
 /**
  * Single renderer for bank questions everywhere.
  *
- * Layout: card container → header row (eyebrow + reward) → body
- * (prose with embedded code panels) → options grid → internal scroll.
- * - Long text auto-shrinks a tier and left-aligns past 400 chars.
- * - Code fences render as inset panels with a CODE tag and h-scroll.
- * - Short options pair into 2 columns on wide screens; long ones stack.
+ * Layout: card container → header row (eyebrow + reward + time limit) → body
+ * (rendered HTML template or prose with embedded code panels) → options grid → internal scroll.
  */
-export default function QuestionView({ text, options, reward, compact, maxHeight }: QuestionViewProps) {
-  if (!text) return null;
+export default function QuestionView({
+  text,
+  template_html,
+  rendered_html,
+  options,
+  reward,
+  timeLimit,
+  compact,
+  maxHeight,
+}: QuestionViewProps) {
+  const htmlContent = rendered_html || template_html;
+  if (!text && !htmlContent) return null;
 
   const entries: Array<[string, unknown]> = Array.isArray(options)
     ? options.map((o, i) => [String.fromCharCode(65 + i), o])
@@ -50,8 +60,9 @@ export default function QuestionView({ text, options, reward, compact, maxHeight
       ? Object.entries(options)
       : [];
 
-  const blocks = splitBlocks(text);
-  const textLen = text.length;
+  const displayText = text || "";
+  const blocks = displayText ? splitBlocks(displayText) : [];
+  const textLen = displayText.length;
   const long = textLen >= 400;
   // Two-column options only when every choice is short and few.
   const grid2col =
@@ -68,35 +79,92 @@ export default function QuestionView({ text, options, reward, compact, maxHeight
         ...(maxHeight ? { maxHeight } : null),
       }}
     >
+      <style>{`
+        .rendered-template h1, .rendered-template h2, .rendered-template h3 {
+          margin: 0.5em 0 0.3em;
+          color: ${colors.gold};
+        }
+        .rendered-template p {
+          margin: 0.4em 0;
+        }
+        .rendered-template code {
+          font-family: 'Consolas', 'Menlo', monospace;
+          background: rgba(255, 255, 255, 0.08);
+          padding: 2px 6px;
+          border-radius: 4px;
+          color: ${colors.green};
+        }
+        .rendered-template pre {
+          font-family: 'Consolas', 'Menlo', monospace;
+          background: ${colors.bg};
+          border: 1px solid ${colors.surfaceBorder};
+          border-radius: 8px;
+          padding: 12px;
+          overflow-x: auto;
+          margin: 8px 0;
+        }
+        .rendered-template ul, .rendered-template ol {
+          margin: 0.4em 0;
+          padding-left: 1.5em;
+        }
+        .rendered-template table {
+          border-collapse: collapse;
+          width: 100%;
+          margin: 8px 0;
+        }
+        .rendered-template th, .rendered-template td {
+          border: 1px solid ${colors.surfaceBorder};
+          padding: 6px 10px;
+          text-align: left;
+        }
+      `}</style>
       <div style={styles.headRow}>
         <span style={styles.eyebrow}>Question</span>
-        {typeof reward === "number" && (
-          <span style={{ ...styles.reward, ...(compact ? styles.rewardCompact : null) }}>
-            Reward: {reward} pts
-          </span>
-        )}
+        <div style={styles.badgeRow}>
+          {typeof timeLimit === "number" && (
+            <span style={{ ...styles.timeLimit, ...(compact ? styles.timeLimitCompact : null) }}>
+              Time Limit: {timeLimit}s
+            </span>
+          )}
+          {typeof reward === "number" && (
+            <span style={{ ...styles.reward, ...(compact ? styles.rewardCompact : null) }}>
+              Reward: {reward} pts
+            </span>
+          )}
+        </div>
       </div>
 
-      <div
-        style={{
-          ...styles.body,
-          ...textTier(textLen, compact),
-          textAlign: long && !compact ? "left" : "center",
-        }}
-      >
-        {blocks.map((b, i) =>
-          b.kind === "code" ? (
-            <div key={i} style={styles.codeWrap}>
-              <div style={styles.codeTag}>CODE</div>
-              <pre style={styles.code}>{b.value}</pre>
-            </div>
-          ) : (
-            <div key={i} style={styles.para}>
-              {b.value}
-            </div>
-          )
-        )}
-      </div>
+      {htmlContent ? (
+        <div
+          className="rendered-template"
+          style={{
+            ...styles.templateBody,
+            ...(compact ? styles.templateBodyCompact : null),
+          }}
+          dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
+      ) : (
+        <div
+          style={{
+            ...styles.body,
+            ...textTier(textLen, compact),
+            textAlign: long && !compact ? "left" : "center",
+          }}
+        >
+          {blocks.map((b, i) =>
+            b.kind === "code" ? (
+              <div key={i} style={styles.codeWrap}>
+                <div style={styles.codeTag}>CODE</div>
+                <pre style={styles.code}>{b.value}</pre>
+              </div>
+            ) : (
+              <div key={i} style={styles.para}>
+                {b.value}
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       {entries.length > 0 && (
         <div style={{ ...styles.opts, ...(grid2col ? styles.optsGrid : null) }}>
@@ -144,6 +212,28 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.95rem",
     color: colors.muted,
   },
+  badgeRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  timeLimit: {
+    ...tabular,
+    display: "inline-block",
+    fontSize: "clamp(0.95rem, 2vw, 1.25rem)",
+    fontWeight: 700,
+    color: colors.ink,
+    backgroundColor: colors.surfaceBorder,
+    borderRadius: "999px",
+    padding: "6px 18px",
+    whiteSpace: "nowrap",
+  },
+  timeLimitCompact: {
+    fontSize: "0.8rem",
+    padding: "4px 12px",
+  },
   reward: {
     ...tabular,
     display: "inline-block",
@@ -158,6 +248,18 @@ const styles: Record<string, React.CSSProperties> = {
   rewardCompact: {
     fontSize: "0.85rem",
     padding: "4px 16px",
+  },
+  templateBody: {
+    width: "100%",
+    color: colors.ink,
+    textAlign: "left",
+    lineHeight: 1.6,
+    fontSize: "clamp(1.05rem, 2.2vw, 1.35rem)",
+    overflowX: "auto",
+  },
+  templateBodyCompact: {
+    fontSize: "0.95rem",
+    lineHeight: 1.45,
   },
   body: {
     width: "100%",

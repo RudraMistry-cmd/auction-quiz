@@ -1,0 +1,15 @@
+<p><strong>Topic: Unions &amp; Hardware Endianness</strong></p>
+<p>On a standard x86-64 (little-endian) architecture, what is printed?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+union Data {
+    unsigned int word;
+    unsigned char bytes[4];
+};
+
+int main(void) {
+    union Data d;
+    d.word = 0x12345678;
+    printf("0x%X\n", d.bytes[0]);
+    return 0;
+}</code></pre>

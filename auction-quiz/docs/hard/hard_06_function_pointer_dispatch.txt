@@ -1,0 +1,14 @@
+<p><strong>Topic: Function Pointers / Dispatch Table</strong></p>
+<p>What is printed by invoking the dispatch table at index 1?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int add(int a, int b) { return a + b; }
+int sub(int a, int b) { return a - b; }
+int mul(int a, int b) { return a * b; }
+
+int main(void) {
+    int (*operations[3])(int, int) = {add, sub, mul};
+    int ans = operations[1](15, 6);
+    printf("%d\n", ans);
+    return 0;
+}</code></pre>

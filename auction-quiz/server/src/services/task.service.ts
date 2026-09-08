@@ -1,12 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDb, persistDb } from "../db/database";
 import { stateManager } from "./phase.service";
+import { questionService } from "./question.service";
 import type { Task, TaskResultDecision, Team } from "../types";
 
 /** Task window: winner has 5 minutes to complete the assigned task. */
 export const TASK_DURATION_S = 300;
-/** Undo window: admin may revert the last recorded result within 30s. */
-export const UNDO_WINDOW_MS = 30000;
 
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -100,17 +99,17 @@ export class TaskService {
 
       const db = await getDb();
       const now = Date.now();
-      // Carry the round's question + default reward onto the task so every
+      // Carry the round's default reward onto the task so every
       // screen can show them the moment the task is assigned.
       const round = queryOne(db, `
-        SELECT question, defaultReward, questionId FROM auctions WHERE auctionId = ?
+        SELECT question, defaultReward, questionId, time_limit FROM auctions WHERE auctionId = ?
       `, [params.auctionId]);
-      if (!round?.questionId) {
-        throw new Error("Cannot assign task: auction has no bank question");
-      }
-      const bankQ = queryOne(db, `
-        SELECT reward_points, options FROM questions WHERE id = ?
-      `, [round.questionId]);
+
+      const timeLimit = typeof round?.time_limit === "number" && round.time_limit > 0
+        ? round.time_limit
+        : TASK_DURATION_S;
+      const endAt = now + timeLimit * 1000;
+
       const task: Task = {
         taskId: uuidv4(),
         auctionId: params.auctionId,
@@ -118,23 +117,25 @@ export class TaskService {
         teamName: params.teamName,
         finalBid: params.finalBid,
         question: (round?.question as string) ?? null,
-        defaultReward: typeof bankQ?.reward_points === "number"
-          ? bankQ.reward_points
-          : typeof round?.defaultReward === "number" ? round.defaultReward : 1,
-        questionId: round.questionId as string,
-        options: parseOptionsJson(bankQ?.options),
+        defaultReward: typeof round?.defaultReward === "number" ? round.defaultReward : 1,
+        questionId: round?.questionId as string ?? "",
+        options: null,
+        time_limit: timeLimit,
+        template_html: undefined,
+        rendered_html: undefined,
         startAt: now,
-        endAt: now + TASK_DURATION_S * 1000,
+        endAt,
         status: "active",
         result: null,
         created_at: new Date().toISOString(),
       };
 
       run(db, `
-        INSERT INTO tasks (taskId, auctionId, teamId, finalBid, question, defaultReward, questionId, options, startAt, endAt, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+        INSERT INTO tasks (taskId, auctionId, teamId, finalBid, question, defaultReward, questionId, options, time_limit, startAt, endAt, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
       `, [task.taskId, task.auctionId, task.teamId, task.finalBid, task.question, task.defaultReward, task.questionId,
           task.options === null || task.options === undefined ? null : JSON.stringify(task.options),
+          task.time_limit,
           task.startAt, task.endAt]);
       persistDb();
 
@@ -278,11 +279,17 @@ export class TaskService {
       const t = this.activeTask;
       if (!t || t.taskId !== taskId) throw new Error("No active task to start");
       const db = await getDb();
-      const endAt = Date.now() + TASK_DURATION_S * 1000;
-      run(db, `UPDATE tasks SET endAt = ?, status = 'active' WHERE taskId = ?`, [endAt, taskId]);
+      let timeLimit = typeof t.time_limit === "number" && t.time_limit > 0 ? t.time_limit : 0;
+      if (!timeLimit) {
+        const row = queryOne(db, `SELECT time_limit FROM tasks WHERE taskId = ?`, [taskId]);
+        if (row?.time_limit && row.time_limit > 0) timeLimit = row.time_limit;
+      }
+      if (!timeLimit) timeLimit = TASK_DURATION_S;
+      const endAt = Date.now() + timeLimit * 1000;
+      run(db, `UPDATE tasks SET endAt = ?, time_limit = ?, status = 'active' WHERE taskId = ?`, [endAt, timeLimit, taskId]);
       persistDb();
-      const stamped = this.stamp({ ...t, endAt, status: "active", paused: false });
-      return { task: stamped, timeLeft: TASK_DURATION_S };
+      const stamped = this.stamp({ ...t, endAt, time_limit: timeLimit, status: "active", paused: false });
+      return { task: stamped, timeLeft: timeLimit };
     });
   }
 
@@ -296,11 +303,8 @@ export class TaskService {
    * - Idempotent: an exact replay of a committed verdict returns the
    *   committed state instead of erroring (safe ack-loss retries).
    * - Atomic: validate → INSERT result row → mutate balances → close
-   *   task, all inside one transaction. A failed INSERT aborts with
-   *   zero mutation (fixes the resubmit-after-undo double-charge).
-   * - Re-verdict after undo is allowed: undone rows don't block, and
-   *   undo() resets the task row to a decidable state.
-   * Moves phase task → idle (stays idle on the re-verdict path).
+   *   task, all inside one transaction.
+   * Moves phase task → idle.
    */
   async submitResult(params: {
     taskId: string;
@@ -330,7 +334,7 @@ export class TaskService {
 
       // Idempotent replay: the exact verdict is already committed.
       const recorded = queryOne(db, `
-        SELECT * FROM task_results WHERE taskId = ? AND undone = 0
+        SELECT * FROM task_results WHERE taskId = ?
       `, [params.taskId]);
       if (recorded) {
         const same = recorded.result === params.result &&
@@ -356,6 +360,7 @@ export class TaskService {
           defaultReward: taskDefault,
           questionId: trow.questionId ?? undefined,
           options: parseOptionsJson(trow.options ?? null),
+          time_limit: trow.time_limit ?? 300,
           startAt: trow.startAt,
           endAt: trow.endAt,
           status: trow.status,
@@ -374,12 +379,11 @@ export class TaskService {
       if (!trow || (trow.status !== "active" && trow.status !== "ended")) {
         throw new Error("Cannot mark result: no decidable task");
       }
-      // …and authorized: live task phase, or idle re-verdict after undo.
+      // …and authorized: live task phase.
       const livePath = stateManager.getPhase() === "task" &&
         stateManager.getTaskId() === params.taskId &&
         this.activeTask?.taskId === params.taskId;
-      const reVerdictPath = stateManager.getPhase() === "idle" && trow.status === "ended";
-      if (!livePath && !reVerdictPath) {
+      if (!livePath) {
         throw new Error("Cannot mark result: no active task");
       }
 
@@ -390,8 +394,6 @@ export class TaskService {
         throw new Error("Team not found");
       }
 
-      const prevReward = team.reward_points as number;
-      const prevCoins = team.bid_coins as number;
       const appliedReward = params.result === "pass" ? wantReward : 0;
       // Coins are NOT touched here: the winner already paid finalBid at
       // auction end. FAIL only denies points.
@@ -404,9 +406,9 @@ export class TaskService {
         try {
           run(db, `
             INSERT INTO task_results
-              (resultId, taskId, result, rewardPoints, coinsDeducted, prevReward, prevCoins, decidedAt, undone)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-          `, [uuidv4(), params.taskId, params.result, appliedReward, appliedDeduction, prevReward, prevCoins, decidedAt]);
+              (resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, [uuidv4(), params.taskId, params.result, appliedReward, appliedDeduction, decidedAt]);
         } catch (err: any) {
           if (/UNIQUE constraint failed/i.test(err?.message || "")) {
             throw new Error("Result already recorded for this task");
@@ -443,81 +445,15 @@ export class TaskService {
         version,
         created_at: trow.created_at,
       };
-      if (livePath) {
-        this.activeTask = null;
-        this.stopTaskTimer();
-        stateManager.taskResolved(params.taskId);
-      }
+      this.activeTask = null;
+      this.stopTaskTimer();
+      stateManager.taskResolved(params.taskId);
 
       const updatedTeam = queryOne(db, `
         SELECT * FROM teams WHERE teamId = ?
       `, [team.teamId]) as Team;
 
       return { task: finished, team: updatedTeam, appliedReward, appliedDeduction };
-    });
-  }
-
-  /**
-   * Revert the most recently recorded (non-undone) result, if it is
-   * still inside the undo window. Restores exact pre-result balances.
-   * Only allowed while idle — never mid-auction or mid-task. Repeat
-   * undos are rejected: an undone result can't be undone again.
-   */
-  async undo(taskId?: string): Promise<{ taskId: string; result: TaskResultDecision; team: Team }> {
-    return this.withLock(async () => {
-      if (stateManager.getPhase() !== "idle") {
-        throw new Error("Undo only allowed while idle (no auction or task running)");
-      }
-
-      const db = await getDb();
-      const row = taskId
-        ? queryOne(db, `
-            SELECT * FROM task_results WHERE taskId = ? AND undone = 0
-            ORDER BY decidedAt DESC LIMIT 1
-          `, [taskId])
-        : queryOne(db, `
-            SELECT * FROM task_results WHERE undone = 0
-            ORDER BY decidedAt DESC LIMIT 1
-          `);
-      if (!row) {
-        throw new Error("Nothing to undo");
-      }
-      if (Date.now() - (row.decidedAt as number) > UNDO_WINDOW_MS) {
-        throw new Error("Undo window expired (30s)");
-      }
-
-      const taskRow = queryOne(db, `
-        SELECT teamId FROM tasks WHERE taskId = ?
-      `, [row.taskId]);
-      if (!taskRow) {
-        throw new Error("Task not found");
-      }
-
-      run(db, "BEGIN IMMEDIATE");
-      try {
-        run(db, `
-          UPDATE teams SET reward_points = ?, bid_coins = ? WHERE teamId = ?
-        `, [row.prevReward, row.prevCoins, taskRow.teamId]);
-        run(db, `
-          UPDATE task_results SET undone = 1 WHERE resultId = ?
-        `, [row.resultId]);
-        // Return the task to a decidable state so the admin can
-        // re-submit the verdict (no dead end).
-        run(db, `
-          UPDATE tasks SET status = 'ended', result = NULL WHERE taskId = ?
-        `, [row.taskId]);
-        run(db, "COMMIT");
-      } catch (err) {
-        try { run(db, "ROLLBACK"); } catch { /* already clean */ }
-        throw err;
-      }
-      persistDb();
-
-      const team = queryOne(db, `
-        SELECT * FROM teams WHERE teamId = ?
-      `, [taskRow.teamId]) as Team;
-
-      return { taskId: row.taskId as string, result: row.result as TaskResultDecision, team };
     });
   }
 

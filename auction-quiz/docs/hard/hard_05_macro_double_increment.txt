@@ -1,0 +1,13 @@
+<p><strong>Topic: Code Debugging / Macro Side Effects</strong></p>
+<p>Why does MIN(++a, b) increment variable 'a' more than once?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+#define MIN(x, y) ((x) &lt; (y) ? (x) : (y))
+
+int main(void) {
+    int a = 3, b = 10;
+    int result = MIN(++a, b);
+    printf("result=%d, a=%d\n", result, a);
+    return 0;
+}</code></pre>
+<p><em>What is the root cause and output?</em></p>

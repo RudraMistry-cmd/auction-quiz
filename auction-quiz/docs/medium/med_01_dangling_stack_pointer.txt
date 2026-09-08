@@ -1,0 +1,15 @@
+<p><strong>Topic: Code Debugging / Dangling Pointer &amp; Stack Lifetime</strong></p>
+<p>Why does this function produce undefined behavior when called?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int* get_multiplier(void) {
+    int factor = 10;
+    return &amp;factor;
+}
+
+int main(void) {
+    int *p = get_multiplier();
+    printf("Value: %d\n", *p);
+    return 0;
+}</code></pre>
+<p><em>Identify the design flaw:</em></p>

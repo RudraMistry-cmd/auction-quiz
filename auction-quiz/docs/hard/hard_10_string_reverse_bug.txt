@@ -1,0 +1,18 @@
+<p><strong>Topic: Code Debugging / In-Place Pointer Swap</strong></p>
+<p>Find the bug that makes this in-place string reverse truncate or corrupt the string:</p>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+void reverse_str(char *str) {
+    char *start = str;
+    char *end = str + strlen(str); // BUG HERE
+
+    while (start &lt; end) {
+        char tmp = *start;
+        *start = *end;
+        *end = tmp;
+        start++;
+        end--;
+    }
+}</code></pre>
+<p><em>What is the exact bug?</em></p>

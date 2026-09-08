@@ -43,6 +43,7 @@ export interface Auction {
   question?: string | null;
   defaultReward?: number;
   questionId?: string | null;
+  time_limit?: number;
   created_at: string;
 }
 
@@ -71,7 +72,7 @@ export interface Task {
   teamName?: string;
   finalBid: number;
   startAt: number; // ms timestamp
-  endAt: number; // ms timestamp (startAt + 300s)
+  endAt: number; // ms timestamp
   status: "active" | "ended" | "completed";
   result?: "pass" | "fail" | null;
   question?: string | null;
@@ -81,6 +82,9 @@ export interface Task {
   paused?: boolean;
   /** Mutation stamp (server ms clock). Higher = newer. Clock-based so it survives restarts. */
   version?: number;
+  time_limit?: number;
+  template_html?: string;
+  rendered_html?: string;
   created_at: string;
 }
 
@@ -89,11 +93,10 @@ export type TaskResultDecision = "pass" | "fail";
 export interface TaskResultEvent {
   taskId: string;
   result: TaskResultDecision;
-  undone: boolean;
   teamId: string;
   teamName: string;
-  coins: number; // team's bid_coins after applying (or restoring) the result
-  rewardPoints: number; // team's reward_points after applying (or restoring)
+  coins: number; // team's bid_coins after applying the result
+  rewardPoints: number; // team's reward_points after applying the result
   rewardGranted: number; // pass only
   coinsDeducted: number; // fail only
 }
@@ -106,7 +109,18 @@ export interface Question {
   question_text: string;
   options: unknown[] | Record<string, unknown> | null; // parsed JSON, null when empty
   difficulty: Difficulty;
+  file_path: string;        // relative path to .txt file (resolved from docs/)
   reward_points: number;
+  time_limit: number;        // seconds (> 0)
+  template_html?: string;
+  rendered_html?: string;
+  is_used?: boolean;
+}
+
+export interface RenderedQuestion {
+  rendered_html: string;
+  reward_points: number;
+  time_limit: number;
 }
 
 export interface QuestionPools {
@@ -140,7 +154,6 @@ export interface ClientEvents {
     data: { taskId: string; result: TaskResultDecision; rewardPoints?: number },
     cb: (res: ResultResponse) => void
   ) => void;
-  "admin:undo": (data: { taskId?: string }, cb: (res: UndoResponse) => void) => void;
   "admin:task_pause": (data: { taskId: string }, cb: (res: TaskTimerResponse) => void) => void;
   "admin:task_resume": (data: { taskId: string }, cb: (res: TaskTimerResponse) => void) => void;
   "admin:task_adjust": (
@@ -153,6 +166,39 @@ export interface ClientEvents {
     data: { questionId: string },
     cb: (res: { success: boolean; question?: Question; error?: string }) => void
   ) => void;
+  "admin:preview_question": (
+    data: { questionId: string },
+    cb: (res: { success: boolean; rendered_html?: string; reward_points?: number; time_limit?: number; error?: string }) => void
+  ) => void;
+  "admin:auth": (
+    data: { secret: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:update_team": (
+    data: { teamId: string; bid_coins?: number; reward_points?: number },
+    cb: (res: { success: boolean; team?: Team; error?: string }) => void
+  ) => void;
+  // Manual timer control
+  "admin:timer_set_duration": (
+    data: { duration: number },
+    cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
+  ) => void;
+  "admin:timer_start": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
+  ) => void;
+  "admin:timer_pause": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
+  ) => void;
+  "admin:timer_reset": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
+  ) => void;
+  "admin:timer_adjust": (
+    data: { seconds: number },
+    cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
+  ) => void;
 }
 
 // ---- Socket Events: Server -> Client ----
@@ -163,6 +209,7 @@ export interface ServerEvents {
   "auction:ended": (data: { auctionId: string; winner: Team | null; winningBid: number | null }) => void;
   "auction:cleared": () => void;
   "task:assigned": (task: Task) => void;
+  "task:started": (data: { time_limit: number; endAt: number; taskId?: string }) => void;
   "task:timer": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "task:ended": (data: { taskId: string }) => void;
   "task:result": (data: TaskResultEvent) => void;
@@ -171,6 +218,8 @@ export interface ServerEvents {
   "task:resumed": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "question:active": (data: QuestionPayload) => void;
   "question:selected": (data: QuestionPayload) => void;
+  "question:preview": (data: RenderedQuestion & { questionId?: string }) => void;
+  "timer:update": (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => void;
 }
 
 // A question made visible to everyone: selected (upcoming), active
@@ -180,7 +229,12 @@ export interface QuestionPayload {
   questionId: string;
   question_text: string;
   options: unknown[] | Record<string, unknown> | null;
+  file_path: string;
   reward_points: number;
+  time_limit: number;
+  template_html?: string;
+  rendered_html?: string;
+  is_used?: boolean;
 }
 
 // ---- Response Types ----
@@ -213,12 +267,6 @@ export interface ResultResponse {
   error?: string;
 }
 
-export interface UndoResponse {
-  success: boolean;
-  taskId?: string;
-  team?: Team;
-  error?: string;
-}
 
 export interface TaskTimerResponse {
   success: boolean;

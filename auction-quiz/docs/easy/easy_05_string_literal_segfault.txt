@@ -1,0 +1,11 @@
+<p><strong>Topic: Code Debugging / Read-Only Memory</strong></p>
+<p>The following code crashes at runtime with a Segmentation Fault. Why?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    char *str = "hello";
+    str[0] = 'H';
+    printf("%s\n", str);
+    return 0;
+}</code></pre>
+<p><em>Which statement accurately describes the bug?</em></p>

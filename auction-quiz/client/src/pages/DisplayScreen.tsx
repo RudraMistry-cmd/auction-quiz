@@ -22,6 +22,8 @@ export default function DisplayScreen() {
   const [timer, setTimer] = useState<number>(0);
   const [winner, setWinner] = useState<{ teamName: string; bid: number } | null>(null);
   const [leaders, setLeaders] = useState<ScoreboardTeam[]>([]);
+  const [manualTimer, setManualTimer] = useState<{ timeLeft: number; isRunning: boolean; duration: number }>({ timeLeft: 0, isRunning: false, duration: 0 });
+
   // True once the server broadcasts auction:cleared — drives the
   // "No active auction" copy. Reset on every auction:started.
   const [auctionCleared, setAuctionCleared] = useState(false);
@@ -45,6 +47,15 @@ export default function DisplayScreen() {
         } else if (s.lastResult?.teamName) {
           setWinner({ teamName: s.lastResult.teamName, bid: s.lastResult.bid ?? 0 });
         }
+      })
+      .catch(() => {});
+
+    // Fetch manual timer state on page load
+    fetch(`${getServerBase()}/api/timer`)
+      .then((r) => r.json())
+      .then((s: any) => {
+        if (cancelled) return;
+        setManualTimer({ timeLeft: s.timeLeft ?? 0, isRunning: s.isRunning ?? false, duration: s.duration ?? 0 });
       })
       .catch(() => {});
 
@@ -112,12 +123,18 @@ export default function DisplayScreen() {
     socket.on("auction:ended", handleEnded);
     socket.on("auction:cleared", handleCleared);
 
+    const handleManualTimer = (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => {
+      setManualTimer({ timeLeft: data.timeLeft, isRunning: data.isRunning, duration: data.duration });
+    };
+    socket.on("timer:update", handleManualTimer);
+
     return () => {
       socket.off("auction:started", handleStarted);
       socket.off("auction:bid_update", handleBidUpdate);
       socket.off("auction:timer", handleTimer);
       socket.off("auction:ended", handleEnded);
       socket.off("auction:cleared", handleCleared);
+      socket.off("timer:update", handleManualTimer);
     };
   }, [socket, connected]);
 
@@ -127,9 +144,13 @@ export default function DisplayScreen() {
   // auction-row copy covers refreshes.
   const aq = activeQuestion ?? (auction?.question
     ? {
+        questionId: auction.questionId || "",
         question_text: auction.question,
         options: null as unknown[] | Record<string, unknown> | null,
+        file_path: "",
         reward_points: auction.defaultReward ?? 1,
+        time_limit: 300,
+        template_html: undefined,
       }
     : null);
 
@@ -154,7 +175,24 @@ export default function DisplayScreen() {
         <TaskStage task={task} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} />
       ) : (
       <>
-      {!auction && !winner && (
+      {!winner && (manualTimer.isRunning || manualTimer.timeLeft > 0) && (
+        <div style={styles.waiting}>
+            <div style={styles.manualTimerSection}>
+              <div style={styles.manualTimerLabel}>
+                {manualTimer.isRunning ? "TIME REMAINING" : "TIMER PAUSED"}
+              </div>
+              <div style={{
+                ...styles.manualTimerValue,
+                color: manualTimer.isRunning
+                  ? manualTimer.timeLeft <= 10 ? colors.red : manualTimer.timeLeft <= 30 ? colors.gold : colors.green
+                  : colors.muted,
+              }}>
+                {manualTimer.timeLeft}
+              </div>
+            </div>
+        </div>
+      )}
+      {!winner && !(manualTimer.isRunning || manualTimer.timeLeft > 0) && !auction && (
         <div style={styles.waiting}>
           <div style={styles.waitingIcon}>Auction</div>
           <div style={styles.waitingText}>{auctionCleared ? "No active auction" : "Waiting to start..."}</div>
@@ -163,8 +201,10 @@ export default function DisplayScreen() {
               <div style={styles.nextUpLabel}>Next up</div>
               <QuestionView
                 text={upcomingQuestion.question_text}
+                template_html={upcomingQuestion.template_html}
                 options={upcomingQuestion.options}
                 reward={upcomingQuestion.reward_points}
+                timeLimit={upcomingQuestion.time_limit}
               />
             </div>
           )}
@@ -175,8 +215,10 @@ export default function DisplayScreen() {
         <div style={styles.qBand}>
           <QuestionView
             text={aq.question_text}
+            template_html={(aq as any).template_html}
             options={aq.options}
             reward={aq.reward_points}
+            timeLimit={(aq as any).time_limit}
             maxHeight="24vh"
           />
         </div>
@@ -428,5 +470,19 @@ const styles: Record<string, React.CSSProperties> = {
     ...tabular,
     color: colors.gold,
     fontWeight: 600,
+  },
+  manualTimerSection: {
+    textAlign: "center",
+  },
+  manualTimerLabel: {
+    ...label,
+    fontSize: "1.5rem",
+    marginBottom: "12px",
+  },
+  manualTimerValue: {
+    ...tabular,
+    fontSize: "clamp(8rem, 26vw, 19rem)",
+    fontWeight: 800,
+    lineHeight: 0.9,
   },
 };

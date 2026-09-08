@@ -49,6 +49,10 @@ export function useGamePhase() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,
+      auth: {
+        adminSecret: sessionStorage.getItem("adminSecret") || undefined,
+        secret: sessionStorage.getItem("adminSecret") || undefined,
+      },
     });
     setSocket(s);
 
@@ -155,12 +159,43 @@ export function useGamePhase() {
       noteStructural(data.version);
       setTaskPaused(true);
       setTaskTimer(data.timeLeft);
+      setTask((prev) => (prev ? { ...prev, paused: true } : prev));
     };
     const handleResumed = (data: { taskId: string; timeLeft: number; version: number }) => {
       noteStructural(data.version);
       setTaskPaused(false);
       setTaskEnded(false);
       setTaskTimer(data.timeLeft);
+      setTask((prev) => (prev ? { ...prev, paused: false, endAt: Date.now() + data.timeLeft * 1000 } : prev));
+    };
+    const handleTaskStarted = (data: { time_limit: number; endAt: number; taskId?: string }) => {
+      noteStructural();
+      setPhase("task");
+      const initialRemaining = Math.max(0, Math.ceil((data.endAt - Date.now()) / 1000));
+      setTaskTimer(initialRemaining > 0 ? initialRemaining : data.time_limit);
+      setTaskEnded(false);
+      setTaskPaused(false);
+      setTask((prev) => {
+        if (!prev) {
+          return {
+            taskId: data.taskId || "",
+            auctionId: "",
+            teamId: "",
+            finalBid: 0,
+            time_limit: data.time_limit,
+            endAt: data.endAt,
+            paused: false,
+            status: "active",
+          } as Task;
+        }
+        return {
+          ...prev,
+          time_limit: data.time_limit,
+          endAt: data.endAt,
+          paused: false,
+          status: "active",
+        };
+      });
     };
     const handleTaskResult = (r: TaskResultEvent) => {
       noteStructural();
@@ -175,6 +210,7 @@ export function useGamePhase() {
     socket.on("auction:started", handleAuctionStarted);
     socket.on("auction:ended", handleAuctionEnded);
     socket.on("task:assigned", handleAssigned);
+    socket.on("task:started", handleTaskStarted);
     socket.on("task:timer", handleTaskTimer);
     socket.on("task:ended", handleTaskEnded);
     socket.on("task:paused", handlePaused);
@@ -187,6 +223,7 @@ export function useGamePhase() {
       socket.off("auction:started", handleAuctionStarted);
       socket.off("auction:ended", handleAuctionEnded);
       socket.off("task:assigned", handleAssigned);
+      socket.off("task:started", handleTaskStarted);
       socket.off("task:timer", handleTaskTimer);
       socket.off("task:ended", handleTaskEnded);
       socket.off("task:paused", handlePaused);

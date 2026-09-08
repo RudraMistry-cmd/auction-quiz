@@ -1,0 +1,13 @@
+<p><strong>Topic: Multi-Level Indirection &amp; Pointer Arithmetic</strong></p>
+<p>Trace this famous classic C pointer puzzle. What does it print?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    char *c[] = {"ENTER", "NEW", "POINT", "FIRST"};
+    char **cp[] = {c + 3, c + 2, c + 1, c};
+    char ***cpp = cp;
+
+    printf("%s ", **++cpp);
+    printf("%s\n", *--*++cpp + 3);
+    return 0;
+}</code></pre>

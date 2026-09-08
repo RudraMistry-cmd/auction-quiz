@@ -1,0 +1,12 @@
+<p><strong>Topic: Code Debugging / Array Indexing</strong></p>
+<p>Find the memory safety error in this loop:</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    int data[5] = {1, 2, 3, 4, 5};
+    for (int i = 0; i &lt;= 5; i++) {
+        printf("%d ", data[i]);
+    }
+    return 0;
+}</code></pre>
+<p><em>Which statement accurately identifies the bug?</em></p>

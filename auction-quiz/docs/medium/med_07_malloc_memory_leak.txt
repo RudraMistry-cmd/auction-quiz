@@ -1,0 +1,13 @@
+<p><strong>Topic: Code Debugging / Heap Memory Leak</strong></p>
+<p>Spot the resource leak in this buffer processing routine:</p>
+<pre><code>#include &lt;stdlib.h&gt;
+
+void process_data(int count) {
+    char *buf;
+    for (int i = 0; i &lt; count; i++) {
+        buf = (char *)malloc(1024);
+        // ... perform work with buf ...
+    }
+    free(buf);
+}</code></pre>
+<p><em>Why does this function leak memory?</em></p>

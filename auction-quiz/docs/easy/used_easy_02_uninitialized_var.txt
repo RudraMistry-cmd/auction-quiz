@@ -1,0 +1,12 @@
+<p><strong>Topic: Code Debugging / Variable Initialization</strong></p>
+<p>Find the bug that causes this function to produce an incorrect or unpredictable sum:</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int sum_first_n(int n) {
+    int sum;
+    for (int i = 1; i &lt;= n; i++) {
+        sum += i;
+    }
+    return sum;
+}</code></pre>
+<p><em>What is the root cause of the error?</em></p>

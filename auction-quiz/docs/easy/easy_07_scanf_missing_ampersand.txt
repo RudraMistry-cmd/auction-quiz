@@ -1,0 +1,12 @@
+<p><strong>Topic: Code Debugging / Standard Library</strong></p>
+<p>Identify the fatal bug in this code that corrupts memory or crashes:</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    int value;
+    printf("Enter number: ");
+    scanf("%d", value);
+    printf("You entered: %d\n", value);
+    return 0;
+}</code></pre>
+<p><em>How should scanf be corrected?</em></p>

@@ -1,0 +1,14 @@
+<p><strong>Topic: Const Qualifiers &amp; Immutability</strong></p>
+<p>Which of the numbered assignment lines causes a compilation error?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 10, y = 20;
+    const int *p1 = &amp;x; // pointer to const int
+    int * const p2 = &amp;x; // const pointer to int
+
+    p1 = &amp;y;    // Line 1
+    *p1 = 30;   // Line 2
+    *p2 = 40;   // Line 3
+    return 0;
+}</code></pre>

@@ -1,9 +1,39 @@
 import { useEffect, useState } from "react";
 import { getServerBase } from "../hooks/useSocket";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
-import QuestionView from "../components/QuestionView";
-import { colors, fontFamily, tabular } from "../theme";
-import type { Auction, Bid, Question } from "../shared/types";
+import TaskTimer from "../components/TaskTimer";
+import { BrandHeader } from "../components/BrandHeader";
+import { tokens, tabular } from "../design-system";
+import type { Auction, Bid } from "../shared/types";
+
+const C = tokens.color;
+const F = tokens.font;
+
+/* ─── Reusable Card ─── */
+function Card({ title, children, span, scroll }: { title: string; children: React.ReactNode; span?: number; scroll?: boolean }) {
+  return (
+    <div style={{
+      gridColumn: span ? `span ${span}` : "span 12",
+      backgroundColor: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: "12px",
+      padding: "20px 24px",
+      boxShadow: tokens.shadow.sm,
+      display: "flex", flexDirection: "column",
+      overflow: scroll ? "hidden" : undefined,
+      minHeight: 0,
+    }}>
+      <div style={{
+        fontFamily: F.heading, fontWeight: 700, fontSize: "0.95rem",
+        color: C.primary, marginBottom: "16px",
+        letterSpacing: "0.05em", textTransform: "uppercase" as const,
+      }}>{title}</div>
+      <div style={{ flex: 1, overflow: scroll ? "auto" : undefined }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 interface ScoreboardTeam {
   teamId: string;
@@ -13,30 +43,54 @@ interface ScoreboardTeam {
   totalBids: number;
 }
 
-export default function AdminScreen() {
-  const { socket, connected, phase, task, taskTimer, taskEnded, taskPaused, lastResult } = useGamePhase();
+interface AdminScreenProps {
+  adminSecret?: string;
+}
+
+export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
+  const secret = adminSecret || import.meta.env.VITE_ADMIN_SECRET || "7f8a9b2c";
+  const { socket, connected, phase, task, taskTimer, taskEnded, taskPaused } = useGamePhase();
+  const [isAdminVerified, setIsAdminVerified] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [auction, setAuction] = useState<Auction | null>(null);
   const [currentBid, setCurrentBid] = useState<number>(0);
   const [leadingTeam, setLeadingTeam] = useState<string>("");
   const [timer, setTimer] = useState<number>(0);
   const [scoreboard, setScoreboard] = useState<ScoreboardTeam[]>([]);
   const [lastEvent, setLastEvent] = useState<string>("");
-  const [adminKey, setAdminKey] = useState<string>(
-    () => sessionStorage.getItem("adminKey") || ""
-  );
   const [rewardInput, setRewardInput] = useState("1");
-  const [bankFile, setBankFile] = useState<File | null>(null);
-  const [importMode, setImportMode] = useState<"append" | "overwrite">("append");
-  const [pools, setPools] = useState<{ easy: Question[]; medium: Question[]; hard: Question[] }>({
-    easy: [],
-    medium: [],
-    hard: [],
+
+  // Team management state
+  const [teamEdits, setTeamEdits] = useState<Record<string, { bid_coins?: number; reward_points?: number }>>({});
+  const [teamBusy, setTeamBusy] = useState(false);
+  const [teamConfirm, setTeamConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
+
+  // Manual timer control state
+  const [timerDuration, setTimerDuration] = useState(60);
+  const [timerState, setTimerState] = useState<{
+    duration: number;
+    endAt: number | null;
+    isRunning: boolean;
+    timeLeft: number;
+  }>({ duration: 0, endAt: null, isRunning: false, timeLeft: 0 });
+  const [timerBusy, setTimerBusy] = useState(false);
+
+  // Image picker state
+  const [images, setImages] = useState<{ name: string; path: string; folder: string }[]>([]);
+  const [selectedImagePath, setSelectedImagePath] = useState<string | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [currentImageSet, setCurrentImageSet] = useState<string | null>(null);
+
+  // Sound control state
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundVolume, setSoundVolume] = useState(100);
+  const [soundPanelOpen, setSoundPanelOpen] = useState(false);
+  const [perSoundEnabled, setPerSoundEnabled] = useState<Record<string, boolean>>({
+    auction_start: true, auction_end: true, bid_small: true, bid_big: true,
+    bid_win: true, timer_start: true, timer_end: true, pass: true, fail: true, tick: true,
   });
-  const [selectedQ, setSelectedQ] = useState<Question | null>(null);
-  const [bankBusy, setBankBusy] = useState(false);
-  const [selDifficulty, setSelDifficulty] = useState<"" | "easy" | "medium" | "hard">("");
-  const [selQuestionId, setSelQuestionId] = useState("");
-  const [selectArmed, setSelectArmed] = useState(false);
+  const [soundFiles, setSoundFiles] = useState<{ name: string; exists: boolean }[]>([]);
+  const [uploadingSound, setUploadingSound] = useState<string | null>(null);
 
   // Pre-fill PASS reward from the round's default — editing stays optional.
   useEffect(() => {
@@ -46,25 +100,6 @@ export default function AdminScreen() {
   }, [task?.taskId]);
   const [failArmed, setFailArmed] = useState(false);
   const [taskPending, setTaskPending] = useState(false);
-  const [undoLeft, setUndoLeft] = useState<number | null>(null);
-
-  // UNDO is visible for 30s after a recorded (non-undone) verdict.
-  useEffect(() => {
-    if (lastResult && !lastResult.undone) {
-      setUndoLeft(30);
-      const id = setInterval(() => {
-        setUndoLeft((v) => {
-          if (v === null || v <= 1) {
-            clearInterval(id);
-            return 0;
-          }
-          return v - 1;
-        });
-      }, 1000);
-      return () => clearInterval(id);
-    }
-    setUndoLeft(null);
-  }, [lastResult]);
 
   // Fetch scoreboard
   const fetchScoreboard = () => {
@@ -74,68 +109,91 @@ export default function AdminScreen() {
     });
   };
 
-  const fetchPools = () => {
+  const fetchImages = () => {
     if (!socket || !connected) return;
-    socket.emit("admin:get_questions", (res: any) => {
-      setPools({ easy: res.easy || [], medium: res.medium || [], hard: res.hard || [] });
-      setSelectedQ(res.selected || null);
-    });
-  };
-
-  // Two-step select: pick in dropdowns → arm → confirm.
-  const selectQ = (id: string) => {
-    if (!socket || bankBusy) return;
-    setBankBusy(true);
-    socket.emit("admin:select_question", { questionId: id }, (res: any) => {
-      setBankBusy(false);
-      setSelectArmed(false);
-      if (res.success && res.question) {
-        setSelectedQ(res.question);
-        setSelQuestionId("");
-        setLastEvent(`Selected (${res.question.difficulty}, ${res.question.reward_points} pts): ${res.question.question_text.slice(0, 60)}`);
-        fetchPools();
-      } else {
-        setLastEvent(`Error: ${res.error || "selection failed"}`);
+    socket.emit("admin:get_images", (res: any) => {
+      if (res.success && res.images) {
+        setImages(res.images);
       }
     });
   };
 
-  const visibleQs = selDifficulty ? pools[selDifficulty] : [];
-
-  const importFile = async () => {
-    if (!bankFile) {
-      setLastEvent("Choose an .xlsx file first");
-      return;
-    }
-    setBankBusy(true);
+  const fetchSounds = async () => {
     try {
-      const fd = new FormData();
-      fd.append("file", bankFile);
-      const res = await fetch(`${getServerBase()}/api/questions/import?mode=${importMode}`, {
+      const res = await fetch(`${getServerBase()}/api/sounds?secret=${secret}`);
+      const data = await res.json();
+      if (data.success && data.sounds) {
+        setSoundFiles(data.sounds);
+        const enabledMap: Record<string, boolean> = {};
+        data.sounds.forEach((s: { name: string; exists: boolean }) => {
+          enabledMap[s.name] = s.exists;
+        });
+        setPerSoundEnabled(enabledMap);
+      }
+    } catch (err) {
+      console.error("[Sound] Failed to fetch sounds:", err);
+    }
+  };
+
+  const uploadSound = async (soundName: string, file: File) => {
+    setUploadingSound(soundName);
+    try {
+      const res = await fetch(`${getServerBase()}/api/sounds/upload?name=${soundName}&secret=${secret}`, {
         method: "POST",
-        headers: { "x-admin-key": adminKey },
-        body: fd,
+        headers: { "Content-Type": "audio/mpeg" },
+        body: file,
       });
       const data = await res.json();
       if (data.success) {
-        const firstErr = data.errors?.length
-          ? ` — e.g. row ${data.errors[0].row}: ${data.errors[0].reason}`
-          : "";
-        setLastEvent(`Imported ${data.imported}, skipped ${data.skipped}${firstErr}`);
-        fetchPools();
+        setLastEvent(`Sound uploaded: ${soundName}.mp3`);
+        fetchSounds();
       } else {
-        setLastEvent(`Error: ${data.error || "import failed"}`);
+        setLastEvent(`Error: ${data.error || "upload failed"}`);
       }
     } catch (err: any) {
       setLastEvent(`Error: ${err.message}`);
+    } finally {
+      setUploadingSound(null);
     }
-    setBankBusy(false);
+  };
+
+  const setImage = (imagePath: string) => {
+    if (!socket || imageBusy) return;
+    setImageBusy(true);
+    socket.emit("admin:set_question_image", { imagePath }, (res: any) => {
+      setImageBusy(false);
+      if (res.success) {
+        setCurrentImageSet(res.imagePath);
+        setSelectedImagePath(null);
+        setLastEvent(`Question image set: ${res.imagePath}`);
+      } else {
+        setLastEvent(`Error: ${res.error || "failed to set image"}`);
+      }
+    });
   };
 
   useEffect(() => {
+    sessionStorage.setItem("isAdmin", "true");
+    sessionStorage.setItem("adminSecret", secret);
+  }, [secret]);
+
+  useEffect(() => {
     if (!socket || !connected) return;
-    fetchScoreboard();
-    fetchPools();
+
+    // Authenticate socket as admin
+    socket.emit("admin:auth", { secret }, (res: any) => {
+      if (res.success) {
+        setIsAdminVerified(true);
+        setAuthError(null);
+        fetchScoreboard();
+        fetchImages();
+        fetchSounds();
+      } else {
+        setIsAdminVerified(false);
+        setAuthError(res.error || "Admin verification failed");
+      }
+    });
+
     // Restore the live auction after a refresh (admin holds no team session).
     fetch(`${getServerBase()}/api/auction/current`)
       .then((r) => r.json())
@@ -150,7 +208,7 @@ export default function AdminScreen() {
       .catch(() => {});
     const interval = setInterval(fetchScoreboard, 5000);
     return () => clearInterval(interval);
-  }, [socket, connected]);
+  }, [socket, connected, secret]);
 
   // Listen for events
   useEffect(() => {
@@ -163,7 +221,6 @@ export default function AdminScreen() {
       setLeadingTeam("");
       setLastEvent(`Auction #${a.seqNo} started`);
       setStartArmed(false);
-      fetchPools(); // selection was consumed — refresh pools + selected
     };
 
     const handleBidUpdate = (data: { auctionId: string; bid: Bid; teamName: string }) => {
@@ -188,12 +245,22 @@ export default function AdminScreen() {
 
     const handleScores = () => fetchScoreboard();
 
+    const handleTimerUpdate = (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => {
+      setTimerState(data);
+    };
+
+    const handleImageSet = (data: { imagePath: string }) => {
+      setCurrentImageSet(data.imagePath);
+    };
+
     socket.on("auction:started", handleStarted);
     socket.on("auction:bid_update", handleBidUpdate);
     socket.on("auction:timer", handleTimer);
     socket.on("auction:ended", handleEnded);
     socket.on("task:result", handleScores);
     socket.on("scoreboard:updated", handleScores);
+    socket.on("timer:update", handleTimerUpdate);
+    socket.on("question:image_set", handleImageSet);
 
     return () => {
       socket.off("auction:started", handleStarted);
@@ -202,6 +269,8 @@ export default function AdminScreen() {
       socket.off("auction:ended", handleEnded);
       socket.off("task:result", handleScores);
       socket.off("scoreboard:updated", handleScores);
+      socket.off("timer:update", handleTimerUpdate);
+      socket.off("question:image_set", handleImageSet);
     };
   }, [socket, connected]);
 
@@ -209,17 +278,17 @@ export default function AdminScreen() {
 
   const startAuction = async () => {
     try {
-      sessionStorage.setItem("adminKey", adminKey);
       setStartArmed(false);
       const res = await fetch(`${getServerBase()}/api/auction/start`, {
         method: "POST",
-        headers: { "x-admin-key": adminKey },
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": secret,
+        },
       });
       const data = await res.json();
       if (!data.success) {
-        setLastEvent(
-          res.status === 401 ? "Error: wrong admin key" : `Error: ${data.error}`
-        );
+        setLastEvent(`Error: ${data.error || "Failed to start auction"}`);
       }
     } catch (err: any) {
       setLastEvent(`Error: ${err.message}`);
@@ -287,432 +356,489 @@ export default function AdminScreen() {
       (r) => (r.revived ? `Timer revived (+30s)` : `+30s (${r.timeLeft}s left)`)
     );
   const startTimer = () =>
-    timerAction("admin:task_start", { taskId: task!.taskId }, () => "Timer started (5:00)");
+    timerAction("admin:task_start", { taskId: task!.taskId }, (r) => `Timer started (${formatClock(r.timeLeft)})`);
 
-  const doUndo = () => {
-    if (!socket || taskPending || undoLeft === 0) return;
-    setTaskPending(true);
-    socket.emit("admin:undo", {}, (res: any) => {
-      setTaskPending(false);
+  const applyTeamUpdate = (teamId: string) => {
+    if (!socket || teamBusy) return;
+    const edit = teamEdits[teamId];
+    if (!edit) return;
+    setTeamBusy(true);
+    socket.emit("admin:update_team", {
+      teamId,
+      bid_coins: edit.bid_coins,
+      reward_points: edit.reward_points,
+    }, (res: any) => {
+      setTeamBusy(false);
       if (res.success) {
-        setLastEvent("Undone — balances restored");
+        setTeamEdits((prev) => { const n = { ...prev }; delete n[teamId]; return n; });
+        setTeamConfirm(null);
+        setLastEvent(`Team ${res.team?.teamName ?? teamId} updated`);
+        fetchScoreboard();
       } else {
-        setLastEvent(`Error: ${res.error || "undo failed"}`);
+        setLastEvent(`Error: ${res.error || "update failed"}`);
       }
     });
   };
 
+  // Manual timer control functions
+  const manualTimerAction = (event: string, data: any) => {
+    if (!socket || timerBusy) return;
+    setTimerBusy(true);
+    const safetyReset = setTimeout(() => setTimerBusy(false), 5000);
+    socket.emit(event as any, data, (res: any) => {
+      clearTimeout(safetyReset);
+      setTimerBusy(false);
+      if (res.success) {
+        setTimerState({
+          duration: res.duration ?? 0,
+          endAt: res.endAt ?? null,
+          isRunning: res.isRunning ?? false,
+          timeLeft: res.timeLeft ?? 0,
+        });
+        setLastEvent(`Timer: ${event.replace("admin:timer_", "")} (${res.timeLeft ?? 0}s)`);
+      } else {
+        setLastEvent(`Error: ${res.error || "timer action failed"}`);
+      }
+    });
+  };
+
+  const timerSetDuration = () => manualTimerAction("admin:timer_set_duration", { duration: timerDuration });
+  const timerStart = () => manualTimerAction("admin:timer_start", {});
+  const timerPause = () => manualTimerAction("admin:timer_pause", {});
+  const timerReset = () => manualTimerAction("admin:timer_reset", {});
+  const timerAdd30 = () => manualTimerAction("admin:timer_adjust", { seconds: 30 });
+
   const isActive = auction?.status === "active" && timer > 0;
-  const showUndo = lastResult && !lastResult.undone;
 
   return (
-    <div style={styles.container}>
+    <div style={{
+        minHeight: "100vh",
+        backgroundColor: C.bg,
+        color: C.text,
+        fontFamily: F.body,
+        padding: "clamp(16px, 3vw, 48px)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+      }}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Admin Panel</h1>
-        <span style={{ color: connected ? colors.green : colors.red }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+          <BrandHeader variant="admin" />
+          <h1 style={styles.title}>Admin Control Panel</h1>
+          {isAdminVerified && (
+            <span style={styles.verifiedBadge}>Host Verified</span>
+          )}
+        </div>
+        <span style={{ color: connected ? C.success : C.danger }}>
           {connected ? "Connected" : "Disconnected"}
         </span>
       </div>
 
-      <div style={styles.grid}>
-        {/* Left: Controls + Timer */}
-        <div style={styles.left}>
-          <div style={{ ...styles.card, marginBottom: "1.5rem" }}>
-            <h2 style={styles.cardTitle}>Question Bank</h2>
-            <div style={styles.bankRow}>
-              <input
-                type="file"
-                accept=".xlsx"
-                onChange={(e) => setBankFile(e.target.files?.[0] || null)}
-                disabled={bankBusy}
-              />
-              <select
-                value={importMode}
-                onChange={(e) => setImportMode(e.target.value as "append" | "overwrite")}
-                style={styles.modeSelect}
-                disabled={bankBusy}
-                aria-label="Import mode"
-              >
-                <option value="append">Append</option>
-                <option value="overwrite">Overwrite</option>
-              </select>
-              <button
-                onClick={importFile}
-                disabled={bankBusy || !bankFile}
-                style={{
-                  ...styles.importBtn,
-                  opacity: bankBusy || !bankFile ? 0.5 : 1,
-                  cursor: bankBusy || !bankFile ? "not-allowed" : "pointer",
-                }}
-              >
-                Import
-              </button>
-            </div>
-            {selectedQ ? (
-              <div style={styles.selectedBox}>
-                <div style={styles.selectedHead}>
-                  <span>
-                    Selected ({selectedQ.difficulty}, {selectedQ.reward_points} pts)
-                  </span>
-                </div>
-                <QuestionView
-                  text={selectedQ.question_text}
-                  options={selectedQ.options}
-                  reward={selectedQ.reward_points}
-                  compact
-                />
-              </div>
-            ) : (
-              <div style={styles.empty}>No question selected — pick one below to start</div>
-            )}
-            {pools.easy.length + pools.medium.length + pools.hard.length === 0 && (
-              <div style={styles.bankWarning}>
-                Bank is empty — import an .xlsx file above to load questions.
-              </div>
-            )}
-            <div style={styles.ddRow}>
-              <div style={styles.ddField}>
-                <div style={styles.ddLabel}>1. Difficulty</div>
-                <select
-                  value={selDifficulty}
-                  onChange={(e) => {
-                    setSelDifficulty(e.target.value as "" | "easy" | "medium" | "hard");
-                    setSelQuestionId("");
-                    setSelectArmed(false);
-                  }}
-                  disabled={bankBusy || phase !== "idle"}
-                  style={styles.ddSelect}
-                  aria-label="Select difficulty"
-                >
-                  <option value="">Select difficulty…</option>
-                  <option value="easy">Easy ({pools.easy.length})</option>
-                  <option value="medium">Medium ({pools.medium.length})</option>
-                  <option value="hard">Hard ({pools.hard.length})</option>
-                </select>
-              </div>
-              <div style={styles.ddField}>
-                <div style={styles.ddLabel}>2. Question</div>
-                <select
-                  value={selQuestionId}
-                  onChange={(e) => {
-                    setSelQuestionId(e.target.value);
-                    setSelectArmed(false);
-                  }}
-                  disabled={bankBusy || phase !== "idle" || !selDifficulty}
-                  style={styles.ddSelect}
-                  aria-label="Select question"
-                >
-                  <option value="">
-                    {!selDifficulty ? "Pick a difficulty first…" : "Select question…"}
-                  </option>
-                  {visibleQs.map((q) => (
-                    <option key={q.id} value={q.id}>
-                      {q.question_text.slice(0, 60)}{q.question_text.length > 60 ? "…" : ""} [{q.reward_points} pts]
-                    </option>
-                  ))}
-                </select>
-                {selDifficulty && visibleQs.length === 0 && (
-                  <div style={styles.ddEmpty}>No questions left in this category</div>
-                )}
-              </div>
-            </div>
-            {!selectArmed ? (
-              <button
-                onClick={() => setSelectArmed(true)}
-                disabled={bankBusy || phase !== "idle" || !selQuestionId}
-                style={{
-                  ...styles.qSelectBtn,
-                  width: "100%",
-                  marginTop: "0.5rem",
-                  opacity: bankBusy || phase !== "idle" || !selQuestionId ? 0.5 : 1,
-                  cursor: bankBusy || phase !== "idle" || !selQuestionId ? "not-allowed" : "pointer",
-                }}
-              >
-                Select Question
-              </button>
-            ) : (
-              <div style={styles.confirmRow}>
-                <span style={styles.confirmText}>
-                  Lock in this question? It will be marked used.
-                </span>
-                <button
-                  onClick={() => selectQ(selQuestionId)}
-                  disabled={bankBusy}
-                  style={styles.qConfirmBtn}
-                >
-                  Confirm Select
-                </button>
-                <button
-                  onClick={() => setSelectArmed(false)}
-                  disabled={bankBusy}
-                  style={styles.cancelBtn}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
+      {authError && (
+        <div style={styles.authErrorBanner}>
+          <strong>Access Denied:</strong> {authError}
+          <div style={{ fontSize: "0.85rem", marginTop: "4px", opacity: 0.85 }}>
+            Admin actions are strictly restricted to the host machine via the non-guessable control panel route.
           </div>
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Auction Control</h2>
-            <input
-              style={styles.keyInput}
-              type="password"
-              placeholder="Admin key"
-              value={adminKey}
-              onChange={(e) => setAdminKey(e.target.value)}
-            />
-            {!selectedQ && !isActive && (
-              <div style={styles.startHint}>Select a question from the bank first</div>
-            )}
-            {!startArmed ? (
-              <button
-                onClick={() => {
-                  if (!selectedQ) {
-                    setLastEvent("Error: select a question from the bank first");
-                    return;
-                  }
-                  setStartArmed(true);
-                }}
-                disabled={isActive}
-                style={{
-                  ...styles.startBtn,
-                  opacity: isActive ? 0.5 : 1,
-                  cursor: isActive ? "not-allowed" : "pointer",
-                }}
-              >
-                {isActive ? "Auction in Progress" : "Start Auction"}
-              </button>
-            ) : (
-              <div style={styles.confirmRow}>
-                <span style={styles.confirmText}>
-                  Start auction{selectedQ ? ` for "${selectedQ.question_text.slice(0, 60)}"` : ""}?
-                </span>
-                <button onClick={startAuction} disabled={isActive} style={styles.startBtn}>
-                  Confirm Start
-                </button>
-                <button
-                  onClick={() => setStartArmed(false)}
-                  disabled={isActive}
-                  style={styles.cancelBtn}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
+        </div>
+      )}
 
-            {auction && (
-              <div style={styles.auctionInfo}>
-                <div style={styles.timerLarge}>{timer}</div>
-                <div style={styles.bidSection}>
-                  <span style={styles.bidLabel}>Current Bid</span>
-                  <span style={styles.bidValue}>{currentBid}</span>
-                </div>
-                {leadingTeam && (
-                  <div style={styles.leadingTeam}>Leading: {leadingTeam}</div>
-                )}
-              </div>
-            )}
-
-            {lastEvent && (
-              <div style={styles.lastEvent}>{lastEvent}</div>
-            )}
+      <div style={gridStyle}>
+        {/* Row 1: Auction Control (8) + Manual Timer (4) */}
+        <Card title="Auction Control" span={8}>
+          <div style={styles.authStatusBadge}>
+            <span style={{ ...styles.authStatusDot, backgroundColor: isAdminVerified ? C.success : C.danger }} />
+            <span>{isAdminVerified ? "Host Verified Session" : "Authenticating session..."}</span>
           </div>
+          {!startArmed ? (
+            <button onClick={() => setStartArmed(true)} disabled={isActive} style={{ ...styles.startBtn, opacity: isActive ? 0.5 : 1, cursor: isActive ? "not-allowed" : "pointer" }}>
+              {isActive ? "Auction in Progress" : "Start Auction"}
+            </button>
+          ) : (
+            <div style={styles.confirmRow}>
+              <span style={styles.confirmText}>Start auction?</span>
+              <button onClick={startAuction} disabled={isActive} style={styles.startBtn}>Confirm Start</button>
+              <button onClick={() => setStartArmed(false)} disabled={isActive} style={styles.cancelBtn}>Cancel</button>
+            </div>
+          )}
+          {auction && (
+            <div style={styles.auctionInfo}>
+              <div style={styles.timerLarge}>{timer}</div>
+              <div style={styles.bidSection}>
+                <span style={styles.bidLabel}>Current Bid</span>
+                <span style={styles.bidValue}>{currentBid}</span>
+              </div>
+              {leadingTeam && <div style={styles.leadingTeam}>Leading: {leadingTeam}</div>}
+            </div>
+          )}
+          {lastEvent && <div style={styles.lastEvent}>{lastEvent}</div>}
+        </Card>
 
-          {/* Task Control Panel */}
-          <div style={{ ...styles.card, marginTop: "1.5rem" }}>
-            <h2 style={styles.cardTitle}>Task Control</h2>
+        <Card title="Manual Timer" span={4}>
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Admin-controlled countdown (independent of auction/task timers).</p>
+          <div style={styles.timerPreview}>
+            <span style={{ ...styles.timerPreviewValue, color: timerState.isRunning ? (timerState.timeLeft <= 10 ? C.danger : timerState.timeLeft <= 30 ? C.accent : C.success) : C.muted }}>
+              {formatClock(timerState.timeLeft)}
+            </span>
+            <span style={styles.timerPreviewLabel}>{timerState.isRunning ? "Running" : timerState.timeLeft > 0 ? "Paused" : "Stopped"}</span>
+          </div>
+          <div style={styles.timerInputRow}>
+            <label style={styles.timerInputLabel}>Duration (s)</label>
+            <input style={styles.timerInput} type="number" min={1} max={3600} value={timerDuration} onChange={(e) => setTimerDuration(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={timerBusy} />
+          </div>
+          <div style={styles.timerBtnRow}>
+            <button onClick={timerSetDuration} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>Set</button>
+            {!timerState.isRunning ? (
+              <button onClick={timerStart} disabled={timerBusy || timerState.timeLeft <= 0} style={{ ...styles.timerCtrlBtn, backgroundColor: C.success }}>Start</button>
+            ) : (
+              <button onClick={timerPause} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.accent }}>Pause</button>
+            )}
+            <button onClick={timerReset} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.danger }}>Reset</button>
+            <button onClick={timerAdd30} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>+30s</button>
+          </div>
+        </Card>
 
-            {phase === "task" && task ? (
-              <div style={styles.taskInfo}>
-                <div style={styles.taskTeam}>{task.teamName}</div>
-                {task.question && <div style={styles.taskQuestion}>{task.question}</div>}
-                <div style={styles.taskMeta}>
-                  Final bid: {task.finalBid} · Default reward: {task.defaultReward ?? 1} pts
-                </div>
-                <div style={styles.taskTimer}>{formatClock(taskTimer)}</div>
-                {taskEnded && (
-                  <div style={styles.timeUpNote}>Time Up — verdict still allowed</div>
-                )}
-                <div style={styles.timerRow}>
-                  {!taskPaused ? (
-                    <button
-                      onClick={pauseTimer}
-                      disabled={taskPending || taskEnded}
-                      style={{
-                        ...styles.timerBtn,
-                        opacity: taskPending || taskEnded ? 0.5 : 1,
-                        cursor: taskPending || taskEnded ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      Pause
-                    </button>
-                  ) : (
-                    <button
-                      onClick={resumeTimer}
-                      disabled={taskPending}
-                      style={{
-                        ...styles.timerBtn,
-                        opacity: taskPending ? 0.5 : 1,
-                        cursor: taskPending ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      Resume
-                    </button>
-                  )}
-                  <button
-                    onClick={addThirty}
-                    disabled={taskPending}
+        <Card title="Image Bank" span={8} scroll>
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Select an image from the questions folder to display on the projector.</p>
+          {images.length === 0 ? (
+            <div style={styles.empty}>No images found in /questions folder</div>
+          ) : (
+            <>
+              <div style={styles.imageGrid}>
+                {images.map((img) => (
+                  <div
+                    key={img.path}
+                    onClick={() => setSelectedImagePath(img.path)}
                     style={{
-                      ...styles.timerBtn,
-                      opacity: taskPending ? 0.5 : 1,
-                      cursor: taskPending ? "not-allowed" : "pointer",
+                      ...styles.imageGridItem,
+                      borderColor: selectedImagePath === img.path ? C.accent : currentImageSet === img.path ? C.success : img.used ? `${C.accent}88` : C.border,
+                      backgroundColor: selectedImagePath === img.path ? `${C.accent}15` : img.used ? `${C.accent}08` : C.bg,
+                      cursor: "pointer",
                     }}
                   >
-                    +30s
-                  </button>
-                  <button
-                    onClick={startTimer}
-                    disabled={taskPending}
-                    style={{
-                      ...styles.timerBtn,
-                      opacity: taskPending ? 0.5 : 1,
-                      cursor: taskPending ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    Start 5:00
-                  </button>
-                </div>
-                {taskPaused && <div style={styles.pausedNote}>Timer paused</div>}
-                <div style={styles.rewardRow}>
-                  <input
-                    style={styles.rewardInput}
-                    type="number"
-                    min={0}
-                    max={10000}
-                    value={rewardInput}
-                    onChange={(e) => setRewardInput(e.target.value)}
-                    disabled={taskPending}
-                    aria-label="Reward points"
+                    <img
+                      src={`${getServerBase()}/questions/${img.path}`}
+                      alt={img.name}
+                      style={styles.imageGridThumb}
+                      loading="lazy"
+                    />
+                    <div style={styles.imageGridName}>{img.name}</div>
+                    {img.used && (
+                      <div style={{
+                        fontSize: "0.6rem",
+                        fontWeight: 700,
+                        color: C.accent,
+                        backgroundColor: `${C.accent}20`,
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        marginTop: "2px",
+                      }}>USED</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {selectedImagePath && (
+                <div style={styles.imagePreviewPanel}>
+                  <div style={styles.imagePreviewLabel}>Preview</div>
+                  <img
+                    src={`${getServerBase()}/questions/${selectedImagePath}`}
+                    alt="Preview"
+                    style={styles.imagePreviewImg}
                   />
                   <button
-                    onClick={submitPass}
-                    disabled={taskPending}
-                    style={{
-                      ...styles.passBtn,
-                      opacity: taskPending ? 0.5 : 1,
-                      cursor: taskPending ? "not-allowed" : "pointer",
-                    }}
+                    onClick={() => setImage(selectedImagePath)}
+                    disabled={imageBusy}
+                    style={{ ...styles.setImageBtn, opacity: imageBusy ? 0.5 : 1, cursor: imageBusy ? "not-allowed" : "pointer" }}
                   >
-                    PASS
+                    {imageBusy ? "Setting..." : "Set as Question"}
                   </button>
                 </div>
-                {!failArmed ? (
-                  <button
-                    onClick={() => setFailArmed(true)}
-                    disabled={taskPending}
-                    style={{
-                      ...styles.failBtn,
-                      opacity: taskPending ? 0.5 : 1,
-                      cursor: taskPending ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    FAIL
-                  </button>
-                ) : (
-                  <div style={styles.confirmRow}>
-                    <span style={styles.confirmText}>
-                      Record FAIL for {task.teamName}? No points awarded
-                      ({task.finalBid} coins were already paid at auction end).
-                    </span>
-                    <button
-                      onClick={submitFail}
-                      disabled={taskPending}
-                      style={styles.failBtn}
-                    >
-                      Confirm FAIL
-                    </button>
-                    <button
-                      onClick={() => setFailArmed(false)}
-                      disabled={taskPending}
-                      style={styles.cancelBtn}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : showUndo ? (
-              <div style={styles.taskInfo}>
-                <div style={styles.taskMeta}>
-                  {lastResult!.result === "pass" ? "PASS" : "FAIL"} recorded
-                  {lastResult!.result === "pass" && ` (+${lastResult!.rewardGranted} pts)`}
-                  {lastResult!.result === "fail" && ` (−${lastResult!.coinsDeducted} coins)`}
-                </div>
+              )}
+            </>
+          )}
+          {currentImageSet && (
+            <div style={styles.currentImageNote}>
+              Active: {currentImageSet}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Sound Settings" span={4}>
+          {/* Collapsible Header */}
+          <div
+            onClick={() => setSoundPanelOpen(!soundPanelOpen)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              cursor: "pointer", padding: "8px 0", userSelect: "none",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{
+                display: "inline-block", width: "8px", height: "8px",
+                borderRadius: "50%", backgroundColor: soundEnabled ? C.success : C.danger,
+              }} />
+              <span style={{ fontWeight: 600, color: C.text }}>
+                {soundEnabled ? "Sounds ON" : "Sounds OFF"}
+              </span>
+            </div>
+            <span style={{ color: C.muted, fontSize: "0.8rem" }}>
+              {soundPanelOpen ? "▲ Close" : "▼ Configure"}
+            </span>
+          </div>
+
+          {/* Collapsible Content */}
+          {soundPanelOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px", borderTop: `1px solid ${C.border}`, paddingTop: "16px" }}>
+              {/* Global Toggle */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontWeight: 600, color: C.text, fontSize: "0.9rem" }}>Enable All Sounds</span>
                 <button
-                  onClick={doUndo}
-                  disabled={taskPending || undoLeft === 0}
+                  onClick={() => {
+                    const newEnabled = !soundEnabled;
+                    setSoundEnabled(newEnabled);
+                    socket?.emit("admin:sound_settings", { enabled: newEnabled, volume: soundVolume }, (res) => {
+                      if (!res.success) console.error("[Sound] Failed:", res.error);
+                    });
+                  }}
                   style={{
-                    ...styles.undoBtn,
-                    opacity: taskPending || undoLeft === 0 ? 0.5 : 1,
-                    cursor: taskPending || undoLeft === 0 ? "not-allowed" : "pointer",
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none",
+                    backgroundColor: soundEnabled ? C.success : C.border, cursor: "pointer",
+                    position: "relative", transition: "background-color 0.2s ease",
                   }}
                 >
-                  {undoLeft === 0 ? "UNDO expired" : `UNDO (${undoLeft ?? 30}s)`}
+                  <div style={{
+                    width: "20px", height: "20px", borderRadius: "50%", backgroundColor: "#fff",
+                    position: "absolute", top: "2px",
+                    left: soundEnabled ? "22px" : "2px",
+                    transition: "left 0.2s ease", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
                 </button>
               </div>
-            ) : (
-              <div style={styles.empty}>No active task</div>
-            )}
-          </div>
-        </div>
 
-        {/* Right: Scoreboard */}
-        <div style={styles.right}>
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Scoreboard</h2>
-            <div style={styles.scoreTable}>
-              <div style={styles.tableHeader}>
-                <span style={styles.colRank}>#</span>
-                <span style={styles.colName}>Team</span>
-                <span style={styles.colCoins}>Coins</span>
-                <span style={styles.colPoints}>Points</span>
-                <span style={styles.colBids}>Bids</span>
-              </div>
-              {scoreboard.map((t, i) => (
-                <div key={t.teamId} style={{
-                  ...styles.tableRow,
-                  backgroundColor: i % 2 === 0 ? colors.surface : colors.bg,
-                }}>
-                  <span style={styles.colRank}>{i + 1}</span>
-                  <span style={styles.colName}>{t.teamName}</span>
-                  <span style={{ ...styles.colCoins, color: t.bid_coins < 200 ? colors.red : colors.gold }}>
-                    {t.bid_coins}
-                  </span>
-                  <span style={{ ...styles.colPoints, color: colors.violet }}>
-                    {t.reward_points}
-                  </span>
-                  <span style={{ ...styles.colBids, color: colors.muted }}>
-                    {t.totalBids}
-                  </span>
+              {/* Volume Slider */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <span style={{ fontWeight: 600, color: C.text, fontSize: "0.9rem" }}>Volume</span>
+                  <span style={{ fontWeight: 700, color: C.accent, fontSize: "0.85rem" }}>{soundVolume}%</span>
                 </div>
-              ))}
-              {scoreboard.length === 0 && (
-                <div style={styles.empty}>No teams registered yet</div>
+                <input
+                  type="range" min={0} max={100} value={soundVolume}
+                  onChange={(e) => {
+                    const vol = parseInt(e.target.value, 10);
+                    setSoundVolume(vol);
+                    socket?.emit("admin:sound_settings", { enabled: soundEnabled, volume: vol }, (res) => {
+                      if (!res.success) console.error("[Sound] Failed:", res.error);
+                    });
+                  }}
+                  style={{ width: "100%", height: "6px", borderRadius: "3px", backgroundColor: C.border, cursor: "pointer", accentColor: C.accent }}
+                />
+              </div>
+
+              {/* Per-Sound Toggles */}
+              <div>
+                <div style={{ fontWeight: 600, color: C.text, fontSize: "0.9rem", marginBottom: "8px" }}>Individual Sounds</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {(["auction_start", "auction_end", "bid_small", "bid_big", "bid_win", "timer_start", "timer_end", "pass", "fail", "tick"] as const).map((name) => (
+                    <div key={name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0" }}>
+                      <span style={{ fontSize: "0.8rem", color: C.text, fontFamily: "monospace" }}>{name}</span>
+                      <button
+                        onClick={() => {
+                          const newEnabled = !perSoundEnabled[name];
+                          setPerSoundEnabled((prev) => ({ ...prev, [name]: newEnabled }));
+                          socket?.emit("admin:sound_per_setting", { soundName: name, enabled: newEnabled }, (res) => {
+                            if (!res.success) console.error("[Sound] Failed:", res.error);
+                          });
+                        }}
+                        style={{
+                          width: "36px", height: "20px", borderRadius: "10px", border: "none",
+                          backgroundColor: perSoundEnabled[name] ? C.success : C.border, cursor: "pointer",
+                          position: "relative", transition: "background-color 0.2s ease",
+                        }}
+                      >
+                        <div style={{
+                          width: "16px", height: "16px", borderRadius: "50%", backgroundColor: "#fff",
+                          position: "absolute", top: "2px",
+                          left: perSoundEnabled[name] ? "18px" : "2px",
+                          transition: "left 0.2s ease", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                        }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* File Upload */}
+              <div>
+                <div style={{ fontWeight: 600, color: C.text, fontSize: "0.9rem", marginBottom: "8px" }}>Upload Sound Files</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {(["auction_start", "auction_end", "bid_small", "bid_big", "bid_win", "timer_start", "timer_end", "pass", "fail", "tick"] as const).map((name) => {
+                    const file = soundFiles.find((f) => f.name === name);
+                    const isUploading = uploadingSound === name;
+                    return (
+                      <div key={name} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.75rem" }}>
+                        <span style={{ fontFamily: "monospace", color: C.text, minWidth: "100px" }}>{name}.mp3</span>
+                        <span style={{ color: file?.exists ? C.success : C.muted, fontSize: "0.7rem" }}>
+                          {file?.exists ? "✓" : "—"}
+                        </span>
+                        <label style={{
+                          marginLeft: "auto", cursor: "pointer", color: C.accent,
+                          fontSize: "0.7rem", fontWeight: 600,
+                          opacity: isUploading ? 0.5 : 1,
+                        }}>
+                          {isUploading ? "Uploading..." : "Upload"}
+                          <input
+                            type="file" accept="audio/mpeg,audio/mp3" style={{ display: "none" }}
+                            disabled={isUploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) uploadSound(name, file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Team Management" span={4} scroll>
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Edit bid coins and reward points. Changes persist to the database.</p>
+          {scoreboard.length === 0 ? (
+            <div style={styles.empty}>No teams to manage</div>
+          ) : (
+            <div style={styles.teamTable}>
+              <div style={styles.teamTableHeader}>
+                <span style={styles.tmColName}>Team</span>
+                <span style={styles.tmColInput}>Coins</span>
+                <span style={styles.tmColInput}>Points</span>
+                <span style={styles.tmColAction}>Action</span>
+              </div>
+              {scoreboard.map((t, i) => {
+                const edit = teamEdits[t.teamId];
+                const coinsStr = edit?.bid_coins !== undefined ? String(edit.bid_coins) : "";
+                const ptsStr = edit?.reward_points !== undefined ? String(edit.reward_points) : "";
+                return (
+                  <div key={t.teamId} style={{ ...styles.teamTableRow, backgroundColor: i % 2 === 0 ? C.surface : C.bg }}>
+                    <span style={styles.tmColName}>{t.teamName}</span>
+                    <input style={styles.tmInput} type="number" min={0} placeholder={String(t.bid_coins)} value={coinsStr} onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); setTeamEdits((prev) => ({ ...prev, [t.teamId]: { ...prev[t.teamId], bid_coins: v } })); }} disabled={teamBusy} />
+                    <input style={styles.tmInput} type="number" min={0} placeholder={String(t.reward_points)} value={ptsStr} onChange={(e) => { const v = e.target.value === "" ? undefined : parseInt(e.target.value, 10); setTeamEdits((prev) => ({ ...prev, [t.teamId]: { ...prev[t.teamId], reward_points: v } })); }} disabled={teamBusy} />
+                    <button style={{ ...styles.tmApplyBtn, opacity: (!edit || teamBusy) ? 0.5 : 1, cursor: (!edit || teamBusy) ? "not-allowed" : "pointer" }} disabled={!edit || teamBusy} onClick={() => setTeamConfirm({ teamId: t.teamId, teamName: t.teamName })}>Apply</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* Row 3: Task Control (6) + Scoreboard (6) */}
+        <Card title="Task Control" span={6}>
+          {phase === "task" && task ? (
+            <div style={styles.taskInfo}>
+              <div style={styles.taskTeam}>{task.teamName}</div>
+              {task.question && <div style={styles.taskQuestion}>{task.question}</div>}
+              <div style={styles.taskMeta}>Final bid: {task.finalBid} · Default reward: {task.defaultReward ?? 1} pts</div>
+              <div style={{ margin: "16px 0" }}><TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} size="small" /></div>
+              {taskEnded && <div style={styles.timeUpNote}>Time Up — verdict still allowed</div>}
+              <div style={styles.timerRow}>
+                {!taskPaused ? <button onClick={pauseTimer} disabled={taskPending || taskEnded} style={{ ...styles.timerBtn, opacity: taskPending || taskEnded ? 0.5 : 1 }}>Pause</button> : <button onClick={resumeTimer} disabled={taskPending} style={{ ...styles.timerBtn, opacity: taskPending ? 0.5 : 1 }}>Resume</button>}
+                <button onClick={addThirty} disabled={taskPending} style={{ ...styles.timerBtn, opacity: taskPending ? 0.5 : 1 }}>+30s</button>
+                <button onClick={startTimer} disabled={taskPending} style={{ ...styles.timerBtn, opacity: taskPending ? 0.5 : 1 }}>Start {formatClock(task.time_limit || 300)}</button>
+              </div>
+              {taskPaused && <div style={styles.pausedNote}>Timer paused</div>}
+              <div style={styles.rewardRow}>
+                <input style={styles.rewardInput} type="number" min={0} max={10000} value={rewardInput} onChange={(e) => setRewardInput(e.target.value)} disabled={taskPending} aria-label="Reward points" />
+                <button onClick={submitPass} disabled={taskPending} style={{ ...styles.passBtn, opacity: taskPending ? 0.5 : 1 }}>PASS</button>
+              </div>
+              {!failArmed ? <button onClick={() => setFailArmed(true)} disabled={taskPending} style={{ ...styles.failBtn, opacity: taskPending ? 0.5 : 1 }}>FAIL</button> : (
+                <div style={styles.confirmRow}>
+                  <span style={styles.confirmText}>Record FAIL for {task.teamName}? No points awarded ({task.finalBid} coins were already paid at auction end).</span>
+                  <button onClick={submitFail} disabled={taskPending} style={styles.failBtn}>Confirm FAIL</button>
+                  <button onClick={() => setFailArmed(false)} disabled={taskPending} style={styles.cancelBtn}>Cancel</button>
+                </div>
               )}
+            </div>
+          ) : <div style={styles.empty}>No active task</div>}
+        </Card>
+
+        <Card title="Scoreboard" span={6} scroll>
+          <div style={styles.scoreTable}>
+            <div style={styles.tableHeader}>
+              <span style={styles.colRank}>#</span><span style={styles.colName}>Team</span><span style={styles.colCoins}>Coins</span><span style={styles.colPoints}>Points</span><span style={styles.colBids}>Bids</span>
+            </div>
+            {scoreboard.map((t, i) => (
+              <div key={t.teamId} style={{ ...styles.tableRow, backgroundColor: i % 2 === 0 ? C.surface : C.bg }}>
+                <span style={styles.colRank}>{i + 1}</span>
+                <span style={styles.colName}>{t.teamName}</span>
+                <span style={{ ...styles.colCoins, color: t.bid_coins < 200 ? C.danger : C.accent }}>{t.bid_coins}</span>
+                <span style={{ ...styles.colPoints, color: C.info }}>{t.reward_points}</span>
+                <span style={{ ...styles.colBids, color: C.muted }}>{t.totalBids}</span>
+              </div>
+            ))}
+            {scoreboard.length === 0 && <div style={styles.empty}>No teams registered yet</div>}
+          </div>
+        </Card>
+      </div>
+
+      {/* Team update confirmation modal */}
+      {teamConfirm && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Confirm Team Update</h3>
+            <p style={styles.modalText}>
+              Apply changes to <strong>{teamConfirm.teamName}</strong>?
+            </p>
+            {teamEdits[teamConfirm.teamId] && (
+              <div style={styles.modalChanges}>
+                {teamEdits[teamConfirm.teamId].bid_coins !== undefined && (
+                  <div>bid_coins → <strong>{teamEdits[teamConfirm.teamId].bid_coins}</strong></div>
+                )}
+                {teamEdits[teamConfirm.teamId].reward_points !== undefined && (
+                  <div>reward_points → <strong>{teamEdits[teamConfirm.teamId].reward_points}</strong></div>
+                )}
+              </div>
+            )}
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => applyTeamUpdate(teamConfirm.teamId)}
+                disabled={teamBusy}
+                style={styles.modalConfirmBtn}
+              >
+                {teamBusy ? "Applying…" : "Confirm"}
+              </button>
+              <button
+                onClick={() => setTeamConfirm(null)}
+                disabled={teamBusy}
+                style={styles.modalCancelBtn}
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
+/* ─── 12-column grid style ─── */
+const gridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(12, 1fr)",
+  gap: "24px",
+  maxWidth: "1400px",
+  width: "100%",
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: "100vh",
-    backgroundColor: colors.bg,
-    color: colors.ink,
-    fontFamily,
+    backgroundColor: C.bg,
+    color: C.text,
+    fontFamily: F.body,
     padding: "48px",
   },
   header: {
@@ -724,36 +850,21 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: "1.5rem",
     fontWeight: "bold",
-    color: colors.ink,
+    color: C.text,
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1.5fr",
+    gridTemplateColumns: "repeat(12, 1fr)",
     gap: "24px",
-    maxWidth: "1200px",
-  },
-  left: {},
-  right: {},
-  card: {
-    backgroundColor: colors.surface,
-    border: `1px solid ${colors.surfaceBorder}`,
-    borderRadius: "1rem",
-    padding: "1.5rem",
-    height: "100%",
-  },
-  cardTitle: {
-    fontSize: "1.125rem",
-    fontWeight: "bold",
-    marginBottom: "1rem",
-    color: colors.ink,
+    maxWidth: "1400px",
   },
   keyInput: {
     width: "100%",
     padding: "0.75rem 1rem",
     borderRadius: "0.75rem",
-    border: `1px solid ${colors.surfaceBorder}`,
-    backgroundColor: colors.bg,
-    color: colors.ink,
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
     fontSize: "1rem",
     outline: "none",
     marginBottom: "0.75rem",
@@ -769,12 +880,12 @@ const styles: Record<string, React.CSSProperties> = {
   taskTeam: {
     fontSize: "1.5rem",
     fontWeight: "bold",
-    color: colors.violet,
+    color: C.info,
   },
   taskQuestion: {
     fontSize: "1.125rem",
     fontWeight: 600,
-    color: colors.ink,
+    color: C.text,
     textAlign: "center",
   },
   bankRow: {
@@ -783,22 +894,22 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: "0.75rem",
     fontSize: "0.875rem",
-    color: colors.muted,
+    color: C.muted,
   },
   modeSelect: {
     padding: "0.5rem",
     borderRadius: "0.5rem",
-    border: `1px solid ${colors.surfaceBorder}`,
-    backgroundColor: colors.bg,
-    color: colors.ink,
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
     fontSize: "0.875rem",
   },
   importBtn: {
     padding: "0.5rem 1rem",
     borderRadius: "0.5rem",
     border: "none",
-    backgroundColor: colors.violet,
-    color: colors.bg,
+    backgroundColor: C.info,
+    color: C.bg,
     fontSize: "0.875rem",
     fontWeight: "bold",
     cursor: "pointer",
@@ -807,9 +918,9 @@ const styles: Record<string, React.CSSProperties> = {
   selectedBox: {
     padding: "0.75rem",
     borderRadius: "0.5rem",
-    backgroundColor: colors.bg,
-    border: `1px solid ${colors.green}`,
-    color: colors.ink,
+    backgroundColor: C.bg,
+    border: `1px solid ${C.success}`,
+    color: C.text,
     fontSize: "0.875rem",
     marginBottom: "0.75rem",
   },
@@ -828,15 +939,15 @@ const styles: Record<string, React.CSSProperties> = {
   ddLabel: {
     fontSize: "0.875rem",
     fontWeight: "bold",
-    color: colors.muted,
+    color: C.muted,
   },
   ddSelect: {
     width: "100%",
     padding: "0.75rem",
     borderRadius: "0.75rem",
-    border: `1px solid ${colors.surfaceBorder}`,
-    backgroundColor: colors.bg,
-    color: colors.ink,
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
     fontSize: "0.95rem",
     outline: "none",
     boxSizing: "border-box",
@@ -844,15 +955,15 @@ const styles: Record<string, React.CSSProperties> = {
   ddEmpty: {
     fontSize: "0.875rem",
     fontWeight: "bold",
-    color: colors.red,
+    color: C.danger,
     marginTop: "0.25rem",
   },
   qSelectBtn: {
     padding: "0.375rem 0.75rem",
     borderRadius: "0.5rem",
     border: "none",
-    backgroundColor: colors.green,
-    color: colors.bg,
+    backgroundColor: C.success,
+    color: C.bg,
     fontSize: "0.875rem",
     fontWeight: "bold",
     cursor: "pointer",
@@ -862,12 +973,76 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0.375rem 0.75rem",
     borderRadius: "0.5rem",
     border: "none",
-    backgroundColor: colors.gold,
-    color: colors.bg,
+    backgroundColor: C.accent,
+    color: C.bg,
     fontSize: "0.875rem",
     fontWeight: "bold",
     cursor: "pointer",
     whiteSpace: "nowrap",
+  },
+  useQuestionBtn: {
+    width: "100%",
+    padding: "0.85rem 1.5rem",
+    borderRadius: "0.75rem",
+    border: "none",
+    backgroundColor: C.success,
+    color: C.bg,
+    fontSize: "1.1rem",
+    fontWeight: 800,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+    marginTop: "0.75rem",
+    boxShadow: `0 4px 14px ${C.success}44`,
+  },
+  previewContainer: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+    marginTop: "1rem",
+    padding: "1rem",
+    borderRadius: "0.75rem",
+    backgroundColor: C.bg,
+    border: `1px solid ${C.border}`,
+  },
+  previewHead: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "0.5rem",
+  },
+  previewTitle: {
+    fontFamily: F.body, fontWeight: 600, fontSize: "0.75rem",
+    color: C.accent, textTransform: "uppercase" as const,
+    letterSpacing: "0.18em",
+  },
+  previewBadges: {
+    display: "flex",
+    gap: "0.5rem",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  previewDifficultyBadge: {
+    fontSize: "0.75rem",
+    fontWeight: 800,
+    color: C.bg,
+    backgroundColor: C.info,
+    padding: "2px 8px",
+    borderRadius: "999px",
+  },
+  previewMetaBadge: {
+    ...tabular,
+    fontSize: "0.75rem",
+    fontWeight: 700,
+    color: C.text,
+    backgroundColor: C.border,
+    padding: "2px 8px",
+    borderRadius: "999px",
+  },
+  previewScrollWrap: {
+    width: "100%",
+    overflowY: "auto",
+    maxHeight: "360px",
   },
   selectedHead: {
     display: "flex",
@@ -875,35 +1050,35 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "0.5rem",
     fontSize: "0.875rem",
-    color: colors.muted,
+    color: C.muted,
     marginBottom: "0.5rem",
   },
   bankWarning: {
     padding: "0.75rem",
     borderRadius: "0.5rem",
-    backgroundColor: colors.bg,
-    border: `1px solid ${colors.red}`,
-    color: colors.red,
+    backgroundColor: C.bg,
+    border: `1px solid ${C.danger}`,
+    color: C.danger,
     fontSize: "0.875rem",
     fontWeight: "bold",
     marginBottom: "0.5rem",
   },
   taskMeta: {
     fontSize: "1rem",
-    color: colors.muted,
+    color: C.muted,
     fontVariantNumeric: "tabular-nums",
   },
   taskTimer: {
     fontSize: "3rem",
     fontWeight: 800,
-    color: colors.ink,
+    color: C.text,
     fontVariantNumeric: "tabular-nums",
     lineHeight: 1,
   },
   timeUpNote: {
     fontSize: "1rem",
     fontWeight: "bold",
-    color: colors.red,
+    color: C.danger,
   },
   timerRow: {
     display: "flex",
@@ -914,9 +1089,9 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     padding: "0.6rem 0.25rem",
     borderRadius: "0.75rem",
-    border: `1px solid ${colors.surfaceBorder}`,
-    backgroundColor: colors.bg,
-    color: colors.ink,
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
     fontSize: "0.95rem",
     fontWeight: "bold",
     cursor: "pointer",
@@ -925,7 +1100,7 @@ const styles: Record<string, React.CSSProperties> = {
   pausedNote: {
     fontSize: "1rem",
     fontWeight: "bold",
-    color: colors.gold,
+    color: C.accent,
   },
   rewardRow: {
     display: "flex",
@@ -936,9 +1111,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: "5rem",
     padding: "0.75rem",
     borderRadius: "0.75rem",
-    border: `1px solid ${colors.surfaceBorder}`,
-    backgroundColor: colors.bg,
-    color: colors.ink,
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
     fontSize: "1.125rem",
     fontWeight: "bold",
     textAlign: "center",
@@ -949,8 +1124,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0.75rem",
     borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: colors.green,
-    color: colors.bg,
+    backgroundColor: C.success,
+    color: C.bg,
     fontSize: "1.125rem",
     fontWeight: "bold",
     cursor: "pointer",
@@ -960,8 +1135,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0.75rem",
     borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: colors.red,
-    color: colors.bg,
+    backgroundColor: C.danger,
+    color: C.bg,
     fontSize: "1.125rem",
     fontWeight: "bold",
     cursor: "pointer",
@@ -974,38 +1149,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   confirmText: {
     fontSize: "0.875rem",
-    color: colors.red,
+    color: C.danger,
     fontWeight: "bold",
   },
   cancelBtn: {
     width: "100%",
     padding: "0.5rem",
     borderRadius: "0.75rem",
-    border: `1px solid ${colors.surfaceBorder}`,
+    border: `1px solid ${C.border}`,
     backgroundColor: "transparent",
-    color: colors.muted,
+    color: C.muted,
     fontSize: "0.875rem",
     cursor: "pointer",
-  },
-  undoBtn: {
-    width: "100%",
-    padding: "0.75rem",
-    borderRadius: "0.75rem",
-    border: `2px solid ${colors.gold}`,
-    backgroundColor: "transparent",
-    color: colors.gold,
-    fontSize: "1.125rem",
-    fontWeight: "bold",
-    cursor: "pointer",
-    fontVariantNumeric: "tabular-nums",
   },
   startBtn: {
     width: "100%",
     padding: "1rem",
     borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: colors.green,
-    color: colors.bg,
+    backgroundColor: C.success,
+    color: C.bg,
     fontSize: "1.125rem",
     fontWeight: "bold",
     cursor: "pointer",
@@ -1013,7 +1176,7 @@ const styles: Record<string, React.CSSProperties> = {
   startHint: {
     fontSize: "0.875rem",
     fontWeight: "bold",
-    color: colors.gold,
+    color: C.accent,
     textAlign: "center",
     marginBottom: "0.5rem",
   },
@@ -1036,25 +1199,25 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bidLabel: {
     fontSize: "0.875rem",
-    color: colors.muted,
+    color: C.muted,
   },
   bidValue: {
     ...tabular,
     fontSize: "2rem",
     fontWeight: "bold",
-    color: colors.gold,
+    color: C.accent,
   },
   leadingTeam: {
     marginTop: "0.75rem",
     fontSize: "1rem",
-    color: colors.violet,
+    color: C.info,
   },
   lastEvent: {
     marginTop: "1rem",
     padding: "0.75rem",
     borderRadius: "0.5rem",
-    backgroundColor: colors.bg,
-    color: colors.muted,
+    backgroundColor: C.bg,
+    color: C.muted,
     fontSize: "0.875rem",
     textAlign: "center",
   },
@@ -1067,17 +1230,17 @@ const styles: Record<string, React.CSSProperties> = {
   tableHeader: {
     display: "flex",
     padding: "0.75rem 1rem",
-    backgroundColor: colors.surfaceBorder,
+    backgroundColor: C.border,
     fontWeight: "bold",
     fontSize: "0.875rem",
-    color: colors.muted,
+    color: C.muted,
   },
   tableRow: {
     display: "flex",
     padding: "0.625rem 1rem",
     fontSize: "0.875rem",
   },
-  colRank: { width: "2rem", textAlign: "center", color: colors.muted },
+  colRank: { width: "2rem", textAlign: "center", color: C.muted },
   colName: { flex: 1 },
   colCoins: { ...tabular, width: "4rem", textAlign: "right" },
   colPoints: { ...tabular, width: "4rem", textAlign: "right" },
@@ -1085,6 +1248,327 @@ const styles: Record<string, React.CSSProperties> = {
   empty: {
     padding: "2rem",
     textAlign: "center",
-    color: colors.muted,
+    color: C.muted,
+  },
+  authStatusBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "0.625rem 1rem",
+    borderRadius: "0.5rem",
+    backgroundColor: C.bg,
+    color: C.text,
+    fontSize: "0.875rem",
+    fontWeight: 600,
+    marginBottom: "1rem",
+    border: `1px solid ${C.border}`,
+  },
+  authStatusDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  authErrorBanner: {
+    padding: "1rem 1.25rem",
+    borderRadius: "0.75rem",
+    backgroundColor: "rgba(255, 92, 92, 0.15)",
+    border: `1px solid ${C.danger}`,
+    color: C.danger,
+    marginBottom: "1.5rem",
+    fontSize: "0.95rem",
+  },
+  verifiedBadge: {
+    fontSize: "0.75rem",
+    fontWeight: 700,
+    color: C.success,
+    backgroundColor: "rgba(61, 220, 132, 0.12)",
+    border: `1px solid ${C.success}`,
+    borderRadius: "999px",
+    padding: "4px 12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+  },
+  // Team management
+  teamTable: {
+    display: "flex",
+    flexDirection: "column",
+    borderRadius: "0.5rem",
+    overflow: "hidden",
+    border: `1px solid ${C.border}`,
+  },
+  teamTableHeader: {
+    display: "flex",
+    padding: "0.625rem 0.75rem",
+    backgroundColor: C.border,
+    fontWeight: "bold",
+    fontSize: "0.8rem",
+    color: C.muted,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  },
+  teamTableRow: {
+    display: "flex",
+    padding: "0.5rem 0.75rem",
+    fontSize: "0.875rem",
+    alignItems: "center",
+    gap: "0.5rem",
+  },
+  tmColName: {
+    flex: 1,
+    fontWeight: 600,
+    color: C.text,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  tmColInput: {
+    width: "4.5rem",
+    textAlign: "center" as const,
+    fontSize: "0.75rem",
+    fontWeight: 700,
+    color: C.muted,
+  },
+  tmColAction: {
+    width: "3.5rem",
+    textAlign: "center" as const,
+  },
+  tmInput: {
+    width: "4.5rem",
+    padding: "0.375rem 0.5rem",
+    borderRadius: "0.5rem",
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
+    fontSize: "0.875rem",
+    fontWeight: "bold",
+    textAlign: "center",
+    outline: "none",
+    ...tabular,
+  },
+  tmApplyBtn: {
+    width: "3.5rem",
+    padding: "0.375rem 0",
+    borderRadius: "0.5rem",
+    border: "none",
+    backgroundColor: C.info,
+    color: C.bg,
+    fontSize: "0.8rem",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  // Confirmation modal
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: C.surface,
+    border: `1px solid ${C.border}`,
+    borderRadius: "1rem",
+    padding: "2rem",
+    minWidth: "320px",
+    maxWidth: "420px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+  },
+  modalTitle: {
+    fontSize: "1.25rem",
+    fontWeight: 800,
+    color: C.text,
+    margin: 0,
+  },
+  modalText: {
+    fontSize: "0.95rem",
+    color: C.muted,
+    margin: 0,
+  },
+  modalChanges: {
+    padding: "0.75rem",
+    borderRadius: "0.5rem",
+    backgroundColor: C.bg,
+    border: `1px solid ${C.border}`,
+    fontSize: "0.9rem",
+    color: C.text,
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+  },
+  modalActions: {
+    display: "flex",
+    gap: "0.75rem",
+    marginTop: "0.5rem",
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    padding: "0.65rem",
+    borderRadius: "0.5rem",
+    border: "none",
+    backgroundColor: C.success,
+    color: C.bg,
+    fontSize: "1rem",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  modalCancelBtn: {
+    flex: 1,
+    padding: "0.65rem",
+    borderRadius: "0.5rem",
+    border: `1px solid ${C.border}`,
+    backgroundColor: "transparent",
+    color: C.muted,
+    fontSize: "1rem",
+    cursor: "pointer",
+  },
+  // Manual timer
+  timerPreview: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "0.25rem",
+    padding: "1rem",
+    borderRadius: "0.75rem",
+    backgroundColor: C.bg,
+    border: `1px solid ${C.border}`,
+    marginBottom: "0.75rem",
+  },
+  timerPreviewValue: {
+    ...tabular,
+    fontSize: "3rem",
+    fontWeight: 800,
+    lineHeight: 1,
+  },
+  timerPreviewLabel: {
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    color: C.muted,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.1em",
+  },
+  timerInputRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
+    marginBottom: "0.75rem",
+  },
+  timerInputLabel: {
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    color: C.muted,
+    whiteSpace: "nowrap" as const,
+  },
+  timerInput: {
+    flex: 1,
+    padding: "0.5rem 0.75rem",
+    borderRadius: "0.5rem",
+    border: `1px solid ${C.border}`,
+    backgroundColor: C.bg,
+    color: C.text,
+    fontSize: "1rem",
+    fontWeight: "bold",
+    textAlign: "center",
+    outline: "none",
+    ...tabular,
+  },
+  timerBtnRow: {
+    display: "flex",
+    gap: "0.5rem",
+  },
+  timerCtrlBtn: {
+    flex: 1,
+    padding: "0.6rem 0",
+    borderRadius: "0.5rem",
+    border: "none",
+    color: C.bg,
+    fontSize: "0.9rem",
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
+  },
+  // Image bank
+  imageGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "0.5rem",
+    marginBottom: "0.75rem",
+  },
+  imageGridItem: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "0.5rem",
+    borderRadius: "0.5rem",
+    border: `2px solid ${C.border}`,
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  },
+  imageGridThumb: {
+    width: "100%",
+    height: "60px",
+    objectFit: "contain" as const,
+    borderRadius: "0.25rem",
+    marginBottom: "0.25rem",
+  },
+  imageGridName: {
+    fontSize: "0.65rem",
+    color: C.muted,
+    textAlign: "center" as const,
+    wordBreak: "break-all" as const,
+    lineHeight: 1.2,
+    maxHeight: "2.4em",
+    overflow: "hidden",
+  },
+  imagePreviewPanel: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "0.5rem",
+    padding: "0.75rem",
+    borderRadius: "0.5rem",
+    backgroundColor: C.bg,
+    border: `1px solid ${C.border}`,
+    marginTop: "0.5rem",
+  },
+  imagePreviewLabel: {
+    fontSize: "0.7rem",
+    fontWeight: 700,
+    color: C.accent,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.1em",
+  },
+  imagePreviewImg: {
+    maxWidth: "100%",
+    maxHeight: "180px",
+    objectFit: "contain" as const,
+    borderRadius: "0.25rem",
+  },
+  setImageBtn: {
+    width: "100%",
+    padding: "0.65rem",
+    borderRadius: "0.5rem",
+    border: "none",
+    backgroundColor: C.accent,
+    color: C.bg,
+    fontSize: "0.9rem",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  currentImageNote: {
+    marginTop: "0.5rem",
+    padding: "0.5rem",
+    borderRadius: "0.375rem",
+    backgroundColor: `${C.success}15`,
+    border: `1px solid ${C.success}`,
+    color: C.success,
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    textAlign: "center" as const,
   },
 };

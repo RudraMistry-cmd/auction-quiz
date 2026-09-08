@@ -1,23 +1,28 @@
+/**
+ * Theme — backward-compatible re-export from design system.
+ *
+ * Existing code:  import { colors, fontFamily, label, tabular, page, card } from "../theme"
+ * New code:       import { ds, tokens, button, card, badge } from "../design-system"
+ */
 import type { CSSProperties } from "react";
+import { tokens } from "./design-system";
 
-// Projector-first theme for the college auction event.
-// High-contrast tokens shared by Team / Admin / Display screens.
-
+// ── Legacy color map (kept for existing imports) ──
 export const colors = {
-  bg: "#0B1020",
-  surface: "#151D33",
-  surfaceBorder: "#2A3658",
-  ink: "#FFFFFF",
-  gold: "#FFB800",
+  bg: tokens.color.bg,
+  surface: tokens.color.surface,
+  surfaceBorder: tokens.color.border,
+  ink: tokens.color.text,
+  gold: tokens.color.accent,
   silver: "#C9D2E0",
   bronze: "#E09A5F",
   violet: "#B79CFF",
-  green: "#3DDC84",
-  red: "#FF5C5C",
-  muted: "#9AA4C0",
+  green: tokens.color.success,
+  red: tokens.color.danger,
+  muted: tokens.color.muted,
 } as const;
 
-export const fontFamily = "'Inter', 'Segoe UI', Arial, sans-serif";
+export const fontFamily = tokens.font.body;
 
 // Uppercase section labels: TIME LEFT, CURRENT BID, LEADING TEAM…
 export const label: CSSProperties = {

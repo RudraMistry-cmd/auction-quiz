@@ -8,6 +8,11 @@ import ScoreboardScreen from "./pages/ScoreboardScreen";
 import { colors, fontFamily } from "./theme";
 import "./App.css";
 
+// Secret non-guessable control panel route.
+// Teams cannot access or guess this route.
+export const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || "7f8a9b2c";
+export const ADMIN_ROUTE = `/control-panel-${ADMIN_SECRET}`;
+
 function App() {
   const [sessionToken, setSessionToken] = useState<string | null>(
     () => localStorage.getItem("sessionToken")
@@ -27,7 +32,8 @@ function App() {
           path="/team"
           element={<TeamScreen sessionToken={sessionToken} onLogout={handleLogout} />}
         />
-        <Route path="/admin" element={<AdminScreen />} />
+        {/* Non-guessable control panel route */}
+        <Route path={ADMIN_ROUTE} element={<AdminScreen adminSecret={ADMIN_SECRET} />} />
         <Route path="/display" element={<DisplayChooser />} />
         <Route path="/display/live" element={<LiveAuctionScreen />} />
         <Route path="/display/scores" element={<ScoreboardScreen />} />
@@ -43,11 +49,10 @@ function NotFound() {
     <div style={styles.home}>
       <h1 style={styles.homeTitle}>Page not found</h1>
       <p style={{ color: colors.muted }}>
-        API endpoints live on the server (:3000), not here. Pick a screen:
+        Pick a screen:
       </p>
       <div style={styles.links}>
         <Link to="/team" style={styles.link}>Team</Link>
-        <Link to="/admin" style={styles.link}>Admin</Link>
         <Link to="/display" style={styles.link}>Display</Link>
       </div>
     </div>
@@ -72,7 +77,6 @@ function Home() {
       <h1 style={styles.homeTitle}>Auction Quiz</h1>
       <div style={styles.links}>
         <Link to="/team" style={styles.link}>Team</Link>
-        <Link to="/admin" style={styles.link}>Admin</Link>
         <Link to="/display/live" style={styles.link}>Display 1 — Live</Link>
         <Link to="/display/scores" style={styles.link}>Display 2 — Scores</Link>
       </div>

@@ -21,6 +21,10 @@ export function useSocket() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,
+      auth: {
+        adminSecret: sessionStorage.getItem("adminSecret") || undefined,
+        secret: sessionStorage.getItem("adminSecret") || undefined,
+      },
     });
 
     setSocket(s);

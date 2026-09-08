@@ -1,0 +1,9 @@
+<p><strong>Topic: Standard I/O / Return Value of printf</strong></p>
+<p>Predict the exact output of this C code:</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    printf("%d\n", printf("TechQuiz"));
+    return 0;
+}</code></pre>
+<p><em>Hint: Consider what printf returns upon successful character output.</em></p>

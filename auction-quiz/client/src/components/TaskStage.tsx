@@ -1,6 +1,6 @@
 import { colors, fontFamily, label, tabular } from "../theme";
-import { formatClock } from "../hooks/useGamePhase";
 import QuestionView from "./QuestionView";
+import TaskTimer from "./TaskTimer";
 import type { Task } from "../shared/types";
 
 interface TaskStageProps {
@@ -17,9 +17,6 @@ interface TaskStageProps {
  */
 export default function TaskStage({ task, timeLeft, ended, paused, highlightTeamId }: TaskStageProps) {
   const isMine = highlightTeamId != null && task.teamId === highlightTeamId;
-  const urgency = timeLeft <= 30 ? "high" : timeLeft <= 60 ? "mid" : "low";
-  const timerColor =
-    urgency === "high" ? colors.red : urgency === "mid" ? colors.gold : colors.green;
 
   return (
     <div style={styles.wrap}>
@@ -34,23 +31,27 @@ export default function TaskStage({ task, timeLeft, ended, paused, highlightTeam
         </div>
       )}
 
-      <QuestionView text={task.question} options={task.options} reward={task.defaultReward ?? 1} />
+      <QuestionView
+        text={task.question}
+        template_html={task.template_html || task.rendered_html}
+        options={task.options}
+        reward={task.defaultReward ?? 1}
+        timeLimit={task.time_limit}
+      />
 
-      {ended ? (
-        <div style={styles.timeUp}>Time Up</div>
-      ) : paused ? (
-        <>
-          <div style={{ ...styles.timer, color: colors.muted }}>{formatClock(timeLeft)}</div>
-          <div style={styles.pausedBadge}>Paused</div>
-        </>
-      ) : (
-        <>
-          <div style={{ ...styles.timer, color: timerColor }}>{formatClock(timeLeft)}</div>
-          <div style={styles.instruction}>
-            {isMine ? "Solve the task" : "Hold tight for the verdict"}
-          </div>
-        </>
-      )}
+      <TaskTimer
+        task={task}
+        timeLimit={task.time_limit}
+        endAt={task.endAt}
+        timeLeft={timeLeft}
+        ended={ended}
+        paused={paused}
+        size="large"
+      />
+
+      <div style={styles.instruction}>
+        {isMine ? "Solve the task" : "Hold tight for the verdict"}
+      </div>
 
       <div style={styles.meta}>
         Final bid: <strong style={styles.gold}>{task.finalBid}</strong>
@@ -101,32 +102,10 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.muted,
     fontWeight: 600,
   },
-  timer: {
-    ...tabular,
-    fontSize: "clamp(7rem, 22vw, 16rem)",
-    fontWeight: 800,
-    lineHeight: 0.9,
-    transition: "color 0.3s ease",
-  },
   instruction: {
     fontSize: "clamp(1.5rem, 3.5vw, 2.5rem)",
     color: colors.ink,
     fontWeight: 600,
-  },
-  timeUp: {
-    fontSize: "clamp(4rem, 12vw, 9rem)",
-    fontWeight: 800,
-    color: colors.red,
-  },
-  pausedBadge: {
-    fontSize: "clamp(1.5rem, 4vw, 2.5rem)",
-    fontWeight: 800,
-    color: colors.gold,
-    letterSpacing: "0.3em",
-    textTransform: "uppercase",
-    border: `2px solid ${colors.gold}`,
-    borderRadius: "999px",
-    padding: "8px 32px",
   },
   meta: {
     ...tabular,

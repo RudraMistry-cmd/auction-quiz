@@ -1,25 +1,87 @@
-# Project Context — auction-quiz (LAN realtime auction, college event)
+# Project Context — Auction Quiz LAN System
 
-## Environment
-- Server: Node 24, Express, Socket.IO, sql.js, TS. 0.0.0.0:3000 (tsx watch, hot-reloads). DB: server/data/auction.db. Deps: xlsx, multer, @types/multer.
-- Client: React + TS + Vite + socket.io-client + react-router-dom on :5173.
-- Root: D:\Projects\College\auc-c\auction-quiz\ | shared types: shared/types.ts (copied to server/src/types.ts, client/src/shared/types.ts). Sample bank: docs/quiz-questions.xlsx (30 rows: 10 easy@10, 10 med@25, 10 hard@50).
+## Project Overview
+- **Type**: LAN realtime auction system for college event
+- **Stack**: Node/Express/Socket.IO server + React/Vite client
+- **No Tailwind/CSS files** — all inline styles until design system was created
+- **User's main projector screen** is `/display/live` (LiveAuctionScreen), NOT `/display` (DisplayScreen)
 
-## Routes (:5173)
-/team | /admin | /display (chooser) | /display/live | /display/scores | /display/legacy | * NotFound.
+## Design System
+- `client/src/design-system.css` — CSS variables, keyframes (bidPop, goldFlash, slideUp, fadeScale, pulse, scoreFlash, fadeSlideUp, toastSlide), Google Fonts (Poppins + Inter)
+- `client/src/design-system.ts` — tokens (color, font, space, radius, shadow, transition) + style factories: `button()`, `card()`, `badge()`, `table`, `input()`, `overlay`, `page`, `divider`, `avatar()`, `tabular`, `labelStyle`
+- `client/src/theme.ts` — backward-compatible re-export wrapper
+- `main.tsx` — imports `design-system.css` before `App.css`
 
-## Current Status
-DONE (server tsc + client build pass; state machine 12/12; tx + migrations verified by execution):
-- Full lifecycle register→auction→task→verdict→idle; phase machine; task.service (assign/timer/pause/resume/adjust/restart, transactional submitResult + idempotent replay + idle re-verdict, undo 30s); boot reconcile; version stamps.
-- QUESTION ENGINE: Excel import, questions+settings tables, pools, idle-only select with burn, strict start-requires-selection + atomic takeSelection, task inherits bank fields, question:active at start+assign, question:selected broadcast.
-- Win-time settlement: finishAuction transactionally deducts min(coins,finalBid), stores auctions.finalBid; submitResult moves only points; undo = pre-verdict restore (no code change needed). TeamScreen header shows Coins (gold) + Score (violet), red/green pulse flashes, authoritative sync on ended/result/reconnect. Admin FAIL text fixed.
-- Frontend: useGamePhase() all screens (upcoming/activeQuestion, hasLiveTaskEvent flag + version guard); QuestionView shared renderer; TaskStage; Admin bank dropdown flow (difficulty→questions, confirm-gated) + Task Control Panel; auction:cleared event wipes bid/leader/timer/winner UI everywhere (task/question untouched), "No active auction" / "Waiting for next auction" copy.
-- Theme tokens + keyframes. ADMIN_KEY via $env. Hard-refresh tabs.
+### Color Tokens
+- Primary #0B3C5D, Accent #D4AF37, Background #F8FAFC, Text #0F172A, Muted #64748B
+- Success #22C55E, Warning #F59E0B, Danger #EF4444, Info #3A7CA5
 
-## GitHub — DONE
-- Repo: https://github.com/RudraMistry-cmd/auction-quiz (private, branch master tracks origin/master). Commit 99f0b6b pushed.
-- Portable gh 2.100.0 kept at C:\Users\RUDRAM~1\AppData\Local\Temp\opencode\ghcli\bin\gh.exe, already authed as RudraMistry-cmd — reuse for future pushes.
-- Dead background tasks (ignore): task_52012584, task_242a1c2f, task_178990e2, task_c203bd2f, task_1bc656eb, job_05b89923, job_f911ddc4, job_8f4af27b (gh login, done). .opencode/todo.md complete.
+## All Screens — Use Design System
+- **LiveAuctionScreen** (`/display/live`) — Main projector. Uses design system tokens. Sub-components: TimerBadge, DifficultyBadge, BidDisplay, NextBidPill, FeedList.
+- **ScoreboardScreen** (`/display/scores`) — 12-col grid. RankBadge (gold/silver/bronze), TeamRow with podium styling, rank change indicators (▲/▼), score flash animation.
+- **AdminScreen** — 12-col grid with Card component: Auction Control (8) + Manual Timer (4) / Question Bank (8) + Team Management (4) / Task Control (6) + Scoreboard (6).
+- **TeamScreen** (`/team`) — Registration form, bidding UI (ENTER + 1.5s cooldown), toast notifications, coin/point flash. No question shown to teams.
+- **DisplayScreen** (`/display/legacy`) — Secondary display (legacy, NOT used)
 
-## Pending Tasks (besides push)
-- None requested. Possible: reset-auctions-only script; event-day runbook (hotspot, no sleep, firewall).
+## Routing (App.tsx)
+- `/` — Home
+- `/team` — TeamScreen
+- `/control-panel-{ADMIN_SECRET}` — AdminScreen
+- `/display` — DisplayChooser
+- `/display/live` — LiveAuctionScreen (MAIN PROJECTOR)
+- `/display/scores` — ScoreboardScreen
+- `/display/legacy` — DisplayScreen
+
+## Server
+- Manual timer: `server/src/services/manual-timer.service.ts`, `/api/timer` REST endpoint
+- All socket handlers in `server/src/handlers/socket.handler.ts`
+- Scoreboard: `client:get_scoreboard` returns teams sorted by reward_points
+
+## Current Status — ALL COMPLETE
+- ✅ Design system created and imported in main.tsx
+- ✅ LiveAuctionScreen refactored with design system tokens
+- ✅ ScoreboardScreen fully rebuilt with premium design
+- ✅ TeamScreen fully rewritten with premium design
+- ✅ AdminScreen refactored with 12-column grid + Card component
+- ✅ All routes wired in App.tsx
+- ✅ All screens compile clean
+- ✅ All old color references fixed (ink→text, green→success, red→danger, violet→info, gold→accent, surfaceBorder→border)
+
+## Pending Tasks (Optional / Future)
+- Migrate DisplayScreen to design system
+- Event-day runbook
+- Any new features user requests
+
+## Key Files
+```
+client/src/
+├── main.tsx                    # Entry, imports design-system.css
+├── App.tsx                     # Router + all routes
+├── design-system.css           # Global CSS variables, keyframes, fonts
+├── design-system.ts            # Tokens + style factories
+├── theme.ts                    # Backward-compatible re-export
+├── shared/types.ts             # All TypeScript interfaces
+├── pages/
+│   ├── LiveAuctionScreen.tsx   # /display/live (MAIN PROJECTOR)
+│   ├── ScoreboardScreen.tsx    # /display/scores
+│   ├── AdminScreen.tsx         # Admin panel (12-col grid + Card)
+│   ├── TeamScreen.tsx          # Team view
+│   └── DisplayScreen.tsx       # Legacy display
+├── components/
+│   ├── TaskStage.tsx           # Task timer
+│   ├── TaskTimer.tsx           # Task timer component
+│   └── QuestionView.tsx        # Question display
+└── hooks/
+    ├── useSocket.ts            # Socket connection
+    └── useGamePhase.ts         # Phase/timer state
+
+server/src/
+├── index.ts                    # Express server + routes
+├── handlers/socket.handler.ts  # All socket events
+├── services/
+│   ├── manual-timer.service.ts # Manual timer with tick broadcast
+│   ├── team.service.ts         # Team + scoreboard
+│   ├── auction.service.ts      # Auction logic
+│   └── task.service.ts         # Task logic
+└── auth.ts                     # Admin secret, ALLOW_REMOTE_ADMIN
+```

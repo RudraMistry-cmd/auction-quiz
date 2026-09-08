@@ -40,11 +40,13 @@ export async function getDb(): Promise<SqlJsDatabase> {
   ensureColumn(db, "auctions", "question", "TEXT");
   ensureColumn(db, "auctions", "defaultReward", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "auctions", "questionId", "TEXT");
+  ensureColumn(db, "auctions", "time_limit", "INTEGER NOT NULL DEFAULT 300");
   ensureColumn(db, "auctions", "finalBid", "INTEGER");
   ensureColumn(db, "tasks", "question", "TEXT");
   ensureColumn(db, "tasks", "defaultReward", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "tasks", "questionId", "TEXT");
   ensureColumn(db, "tasks", "options", "TEXT");
+  ensureColumn(db, "tasks", "time_limit", "INTEGER NOT NULL DEFAULT 300");
 
   // Auto-save every 5 seconds (safety net — mutations persist immediately)
   saveInterval = setInterval(persistDb, 5000);
@@ -115,19 +117,10 @@ function initTables(db: SqlJsDatabase) {
       defaultReward INTEGER NOT NULL DEFAULT 1,
       questionId TEXT,
       options TEXT,
+      time_limit INTEGER NOT NULL DEFAULT 300,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (auctionId) REFERENCES auctions(auctionId),
       FOREIGN KEY (teamId) REFERENCES teams(teamId)
-    );
-
-    CREATE TABLE IF NOT EXISTS questions (
-      id TEXT PRIMARY KEY,
-      question_text TEXT NOT NULL,
-      options TEXT,
-      difficulty TEXT NOT NULL DEFAULT 'medium',
-      reward_points INTEGER NOT NULL DEFAULT 0,
-      is_used INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -137,14 +130,11 @@ function initTables(db: SqlJsDatabase) {
 
     CREATE TABLE IF NOT EXISTS task_results (
       resultId TEXT PRIMARY KEY,
-      taskId TEXT NOT NULL,
+      taskId TEXT NOT NULL UNIQUE,
       result TEXT NOT NULL,
       rewardPoints INTEGER NOT NULL DEFAULT 0,
       coinsDeducted INTEGER NOT NULL DEFAULT 0,
-      prevReward INTEGER NOT NULL,
-      prevCoins INTEGER NOT NULL,
       decidedAt INTEGER NOT NULL,
-      undone INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (taskId) REFERENCES tasks(taskId) ON DELETE CASCADE
     );
 
@@ -156,49 +146,53 @@ function initTables(db: SqlJsDatabase) {
     CREATE INDEX IF NOT EXISTS idx_auctions_status ON auctions(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     CREATE INDEX IF NOT EXISTS idx_task_results_task ON task_results(taskId);
-    CREATE INDEX IF NOT EXISTS idx_questions_pool ON questions(difficulty, is_used);
   `);
 }
 
 /**
- * One-way migration: databases created before the undo re-verdict fix
- * carry UNIQUE(taskId) on task_results, which permanently blocks
- * re-submission after undo. Rebuilds the table without it, preserving rows.
+ * Migration: remove undo-related columns (undone, prevReward, prevCoins)
+ * from task_results and enforce UNIQUE(taskId) so each task has at most
+ * one definitive verdict.
  */
 function migrateTaskResults(db: SqlJsDatabase) {
   try {
-    const out = db.exec(
+    const out = db.exec(`PRAGMA table_info(task_results)`);
+    const cols = (out[0]?.values ?? []).map((r) => r[1] as string);
+    const hasLegacyCols = cols.includes("undone") || cols.includes("prevReward") || cols.includes("prevCoins");
+    const ddlOut = db.exec(
       `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'task_results'`
     );
-    const ddl = (out[0]?.values[0]?.[0] as string) || "";
-    if (!ddl || !/taskId TEXT NOT NULL UNIQUE/i.test(ddl)) return;
+    const ddl = (ddlOut[0]?.values[0]?.[0] as string) || "";
+    const hasUniqueTaskId = /taskId TEXT NOT NULL UNIQUE/i.test(ddl) || /UNIQUE\s*\(\s*taskId\s*\)/i.test(ddl);
+
+    if (!hasLegacyCols && hasUniqueTaskId) return;
 
     db.run(`ALTER TABLE task_results RENAME TO task_results_legacy`);
     db.run(`
       CREATE TABLE task_results (
         resultId TEXT PRIMARY KEY,
-        taskId TEXT NOT NULL,
+        taskId TEXT NOT NULL UNIQUE,
         result TEXT NOT NULL,
         rewardPoints INTEGER NOT NULL DEFAULT 0,
         coinsDeducted INTEGER NOT NULL DEFAULT 0,
-        prevReward INTEGER NOT NULL,
-        prevCoins INTEGER NOT NULL,
         decidedAt INTEGER NOT NULL,
-        undone INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (taskId) REFERENCES tasks(taskId) ON DELETE CASCADE
       )
     `);
+    const whereClause = cols.includes("undone") ? "WHERE undone = 0" : "";
     db.run(`
-      INSERT INTO task_results
-        (resultId, taskId, result, rewardPoints, coinsDeducted, prevReward, prevCoins, decidedAt, undone)
-      SELECT resultId, taskId, result, rewardPoints, coinsDeducted, prevReward, prevCoins, decidedAt, undone
+      INSERT OR IGNORE INTO task_results
+        (resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt)
+      SELECT resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt
       FROM task_results_legacy
+      ${whereClause}
+      ORDER BY decidedAt DESC
     `);
     db.run(`DROP TABLE task_results_legacy`);
     persistDb();
-    console.warn("[DB] Migrated task_results: removed UNIQUE(taskId) so verdicts can be re-submitted after undo.");
+    console.log("[DB] Migrated task_results: removed undo fields and enforced UNIQUE(taskId).");
   } catch (err) {
-    console.error("[DB] task_results migration failed (undo re-verdict stays blocked):", err);
+    console.error("[DB] task_results migration failed:", err);
   }
 }
 

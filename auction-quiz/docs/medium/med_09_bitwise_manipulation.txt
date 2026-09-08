@@ -1,0 +1,10 @@
+<p><strong>Topic: Bitwise Logic &amp; Masking</strong></p>
+<p>Calculate the integer value printed by this bit manipulation:</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    unsigned char val = 0xAA; // binary: 1010 1010
+    unsigned char res = (val &gt;&gt; 2) &amp; 0x0F;
+    printf("%u\n", res);
+    return 0;
+}</code></pre>

@@ -1,0 +1,11 @@
+<p><strong>Topic: Code Debugging / Safe realloc Idiom</strong></p>
+<p>Why is assigning ptr = realloc(ptr, new_size) considered unsafe?</p>
+<pre><code>#include &lt;stdlib.h&gt;
+
+void resize_buffer(char *ptr, size_t new_size) {
+    ptr = (char *)realloc(ptr, new_size); // HAZARD
+    if (!ptr) {
+        // handle allocation failure
+    }
+}</code></pre>
+<p><em>What fatal consequence happens if realloc fails?</em></p>

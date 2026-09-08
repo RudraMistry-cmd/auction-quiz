@@ -1,0 +1,20 @@
+<p><strong>Topic: Control Flow &amp; Switch Fallthrough</strong></p>
+<p>What is printed to standard output when the following program is executed?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    int x = 2;
+    switch (x) {
+        case 1:
+            printf("Choice 1 ");
+        case 2:
+            printf("Choice 2 ");
+        case 3:
+            printf("Choice 3 ");
+            break;
+        default:
+            printf("Default");
+    }
+    return 0;
+}</code></pre>
+<p><em>Select the correct printed output:</em></p>

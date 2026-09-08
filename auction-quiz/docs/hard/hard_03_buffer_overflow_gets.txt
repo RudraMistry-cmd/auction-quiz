@@ -1,0 +1,10 @@
+<p><strong>Topic: Security Vulnerability / Stack Smashing</strong></p>
+<p>Why was gets() deprecated in C99 and completely removed from C11?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+void read_input(void) {
+    char buffer[16];
+    gets(buffer); // VULNERABILITY
+    printf("Input: %s\n", buffer);
+}</code></pre>
+<p><em>What is the exploit vector and recommended secure replacement?</em></p>

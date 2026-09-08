@@ -14,6 +14,8 @@ class StateManager {
   private phase: Phase = "idle";
   private currentAuctionId: string | null = null;
   private currentTaskId: string | null = null;
+  private currentQuestionImage: string | null = null;
+  private usedImages: Set<string> = new Set();
 
   getPhase(): Phase {
     return this.phase;
@@ -25,6 +27,30 @@ class StateManager {
 
   getTaskId(): string | null {
     return this.currentTaskId;
+  }
+
+  getQuestionImage(): string | null {
+    return this.currentQuestionImage;
+  }
+
+  setQuestionImage(imagePath: string | null): void {
+    this.currentQuestionImage = imagePath;
+  }
+
+  markImageUsed(imagePath: string): void {
+    this.usedImages.add(imagePath);
+  }
+
+  isImageUsed(imagePath: string): boolean {
+    return this.usedImages.has(imagePath);
+  }
+
+  getUsedImages(): string[] {
+    return Array.from(this.usedImages);
+  }
+
+  clearUsedImages(): void {
+    this.usedImages.clear();
   }
 
   snapshot(): { phase: Phase; currentAuctionId: string | null; currentTaskId: string | null } {

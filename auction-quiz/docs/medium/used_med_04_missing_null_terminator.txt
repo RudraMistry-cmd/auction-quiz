@@ -1,0 +1,15 @@
+<p><strong>Topic: Code Debugging / C Strings &amp; Null Termination</strong></p>
+<p>When executing this code, printf prints trailing garbage characters or crashes. Why?</p>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+int main(void) {
+    char src[] = "AUCTION";
+    char dest[8];
+    for (int i = 0; i &lt; 7; i++) {
+        dest[i] = src[i];
+    }
+    printf("%s\n", dest);
+    return 0;
+}</code></pre>
+<p><em>What is missing to make dest a valid C string?</em></p>

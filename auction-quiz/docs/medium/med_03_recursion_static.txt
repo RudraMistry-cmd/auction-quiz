@@ -1,0 +1,15 @@
+<p><strong>Topic: Code Tracing / Recursion &amp; static State</strong></p>
+<p>Compute the output printed by this recursive routine:</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int calculate(int n) {
+    static int sum = 0;
+    if (n &lt;= 0) return sum;
+    sum += n;
+    return calculate(n - 1);
+}
+
+int main(void) {
+    printf("%d\n", calculate(5));
+    return 0;
+}</code></pre>

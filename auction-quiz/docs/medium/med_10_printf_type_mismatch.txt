@@ -1,0 +1,10 @@
+<p><strong>Topic: Code Debugging / Calling Convention &amp; Varargs</strong></p>
+<p>Why does the following snippet print 0.000000 (or garbage) instead of 42.000000?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    int num = 42;
+    printf("%f\n", num);
+    return 0;
+}</code></pre>
+<p><em>Select the technical reason:</em></p>

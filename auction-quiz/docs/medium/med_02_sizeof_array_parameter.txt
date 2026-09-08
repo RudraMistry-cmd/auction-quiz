@@ -1,0 +1,13 @@
+<p><strong>Topic: Array Decay to Pointer</strong></p>
+<p>On a standard 64-bit architecture, what is printed by print_size?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+void print_size(int arr[10]) {
+    printf("%zu\n", sizeof(arr));
+}
+
+int main(void) {
+    int numbers[10];
+    print_size(numbers);
+    return 0;
+}</code></pre>

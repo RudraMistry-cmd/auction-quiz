@@ -1,0 +1,14 @@
+<p><strong>Topic: Struct Memory Layout &amp; Alignment</strong></p>
+<p>Assuming a 64-bit architecture with 4-byte int and 8-byte pointer alignment, what is sizeof(struct Packet)?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+struct Packet {
+    char flag;     // 1 byte
+    int id;        // 4 bytes
+    char code;     // 1 byte
+};
+
+int main(void) {
+    printf("%zu\n", sizeof(struct Packet));
+    return 0;
+}</code></pre>

@@ -1,0 +1,16 @@
+<p><strong>Topic: Storage Classes / static Lifetime</strong></p>
+<p>What is printed by calling counter() three times in main?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+void counter(void) {
+    static int count = 0;
+    count++;
+    printf("%d ", count);
+}
+
+int main(void) {
+    counter();
+    counter();
+    counter();
+    return 0;
+}</code></pre>

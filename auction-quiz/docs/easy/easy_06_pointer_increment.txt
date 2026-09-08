@@ -1,0 +1,13 @@
+<p><strong>Topic: Pointer Operator Precedence</strong></p>
+<p>What values are printed by the two printf statements?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    int arr[] = {10, 20, 30};
+    int *ptr = arr;
+
+    printf("%d ", *ptr++);
+    printf("%d\n", *ptr);
+    return 0;
+}</code></pre>
+<p><em>Select the printed sequence:</em></p>

@@ -3,24 +3,16 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import path from "path";
 import { setupSocketHandlers } from "./handlers/socket.handler";
 import { getDb, closeDb } from "./db/database";
 import { auctionService } from "./services/auction.service";
 import { taskService } from "./services/task.service";
 import { questionService } from "./services/question.service";
-import multer from "multer";
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
-});
+import { manualTimerService } from "./services/manual-timer.service";
+import { ADMIN_SECRET, ALLOW_REMOTE_ADMIN, isLocalOrHostIp } from "./auth";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
-const ADMIN_KEY = process.env.ADMIN_KEY || "auction-admin";
-
-if (!process.env.ADMIN_KEY) {
-  console.warn("[Server] WARNING: ADMIN_KEY not set — using default. Set ADMIN_KEY env var for live events.");
-}
 
 // Never let one bad request kill the event.
 process.on("unhandledRejection", (reason) => {
@@ -42,6 +34,9 @@ async function main() {
   app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
   app.use(express.json());
 
+  // Serve question images from /questions folder
+  app.use("/questions", express.static(path.join(__dirname, "../../questions")));
+
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: Date.now() });
   });
@@ -54,11 +49,28 @@ async function main() {
 
   const auctionControl = setupSocketHandlers(io);
 
-  app.post("/api/auction/start", async (req, res) => {
-    if (req.header("x-admin-key") !== ADMIN_KEY) {
-      res.status(401).json({ success: false, error: "Unauthorized" });
+  // Middleware: Only localhost/host IP with the secret can access admin HTTP endpoints
+  const adminHttpAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const secret = req.header("x-admin-secret") || req.header("x-admin-key") || req.query.secret;
+    const clientIp = req.socket.remoteAddress || req.ip;
+    const isHost = isLocalOrHostIp(clientIp);
+
+    if (!isHost && !ALLOW_REMOTE_ADMIN) {
+      console.warn(`[HTTP] Blocked admin access from non-host IP: ${clientIp}`);
+      res.status(403).json({ success: false, error: "Admin access allowed only from localhost or host IP" });
       return;
     }
+
+    if (secret !== ADMIN_SECRET) {
+      console.warn(`[HTTP] Blocked admin access with invalid secret from: ${clientIp}`);
+      res.status(403).json({ success: false, error: "Unauthorized: Invalid admin secret" });
+      return;
+    }
+
+    next();
+  };
+
+  app.post("/api/auction/start", adminHttpAuth, async (req, res) => {
     try {
       const { question, defaultReward } = req.body ?? {};
       const auction = await auctionControl.startAuction({ question, defaultReward });
@@ -74,30 +86,67 @@ async function main() {
     res.json({ teams: scoreboard });
   });
 
-  // Question bank import (admin only). Modes: append (default) | overwrite.
-  app.post("/api/questions/import", upload.single("file"), async (req, res) => {
-    if (req.header("x-admin-key") !== ADMIN_KEY) {
-      res.status(401).json({ success: false, error: "Unauthorized" });
-      return;
-    }
-    try {
-      if (!req.file) {
-        res.status(400).json({ success: false, error: "Missing file field 'file' (.xlsx)" });
-        return;
-      }
-      const mode = req.query.mode === "overwrite" ? "overwrite" : "append";
-      res.json(await questionService.importExcel(req.file.buffer, mode));
-    } catch (err: any) {
-      res.status(400).json({ success: false, error: err.message || "Import failed" });
-    }
-  });
-
   // Public snapshot for display/admin screens (e.g. after a page refresh).
   app.get("/api/auction/current", async (_req, res) => {
     try {
       res.json(await auctionService.getPublicState());
     } catch (err: any) {
       res.status(500).json({ auction: null, error: err.message });
+    }
+  });
+
+  // Manual timer state for display refresh
+  app.get("/api/timer", (_req, res) => {
+    try {
+      res.json(manualTimerService.getState());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Sound file management
+  const soundsDir = path.join(__dirname, "../../client/public/sounds");
+  const fs = require("fs");
+
+  // List available sound files
+  app.get("/api/sounds", adminHttpAuth, (_req, res) => {
+    try {
+      const soundNames = [
+        "auction_start", "auction_end", "bid_small", "bid_big", "bid_win",
+        "timer_start", "timer_end", "pass", "fail", "tick"
+      ];
+      const files = soundNames.map((name) => {
+        const filePath = path.join(soundsDir, `${name}.mp3`);
+        const exists = fs.existsSync(filePath);
+        return { name, exists, path: `/sounds/${name}.mp3` };
+      });
+      res.json({ success: true, sounds: files });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Upload a sound file (multipart form)
+  app.post("/api/sounds/upload", adminHttpAuth, express.raw({ type: "audio/*", limit: "5mb" }), (req, res) => {
+    try {
+      const soundName = req.query.name as string;
+      if (!soundName || !/^[a-z_]+$/.test(soundName)) {
+        res.status(400).json({ success: false, error: "Invalid sound name" });
+        return;
+      }
+      if (!req.body || req.body.length === 0) {
+        res.status(400).json({ success: false, error: "No file data" });
+        return;
+      }
+      if (!fs.existsSync(soundsDir)) {
+        fs.mkdirSync(soundsDir, { recursive: true });
+      }
+      const filePath = path.join(soundsDir, `${soundName}.mp3`);
+      fs.writeFileSync(filePath, req.body);
+      console.log(`[Sound] Uploaded: ${soundName}.mp3 (${req.body.length} bytes)`);
+      res.json({ success: true, name: soundName, path: `/sounds/${soundName}.mp3` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 

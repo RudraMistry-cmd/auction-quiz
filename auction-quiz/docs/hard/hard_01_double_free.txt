@@ -1,0 +1,12 @@
+<p><strong>Topic: Code Debugging / Heap Safety &amp; Double Free</strong></p>
+<p>Examine this error-handling cleanup snippet. What critical security vulnerability exists?</p>
+<pre><code>#include &lt;stdlib.h&gt;
+
+void cleanup_buffers(char *buf, int status) {
+    if (status &lt; 0) {
+        free(buf);
+    }
+    // ... further error logging ...
+    free(buf);
+}</code></pre>
+<p><em>What occurs when status &lt; 0 and how should it be avoided?</em></p>

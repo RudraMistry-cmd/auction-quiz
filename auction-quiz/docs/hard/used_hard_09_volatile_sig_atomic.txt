@@ -1,0 +1,18 @@
+<p><strong>Topic: Code Debugging / Optimization &amp; volatile Keyword</strong></p>
+<p>When compiling with -O2 or -O3, this loop hangs indefinitely even after handle_signal executes. Why?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int keep_running = 1;
+
+void handle_signal(void) {
+    keep_running = 0;
+}
+
+int main(void) {
+    while (keep_running) {
+        // waiting for signal...
+    }
+    printf("Terminated cleanly\n");
+    return 0;
+}</code></pre>
+<p><em>What must be done to prevent the optimizer from caching keep_running in a register?</em></p>

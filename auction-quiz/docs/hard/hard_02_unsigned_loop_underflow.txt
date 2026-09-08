@@ -1,0 +1,12 @@
+<p><strong>Topic: Integer Promotion &amp; Unsigned Underflow</strong></p>
+<p>What happens when executing this loop?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+int main(void) {
+    for (unsigned int i = 5; i &gt;= 0; i--) {
+        printf("%u ", i);
+        if (i == 0) break; // If this guard line were omitted, what occurs?
+    }
+    return 0;
+}</code></pre>
+<p><em>If the break guard is removed, what is the behavior of the loop?</em></p>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Auction Question</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Poppins", "Segoe UI", sans-serif;
+    }
+
+    body {
+      background: #0B0F1A;
+      color: #FFFFFF;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HEADER */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 40px;
+      border-bottom: 2px solid rgba(255,255,255,0.1);
+    }
+
+    .badge {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 18px;
+    }
+
+    .easy { background: #22C55E; }
+    .medium { background: #F59E0B; }
+    .hard { background: #EF4444; }
+
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .timer {
+      font-size: 24px;
+      font-weight: 600;
+      color: #22D3EE;
+    }
+
+    /* MAIN BOX */
+    .container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 30px;
+    }
+
+    .question-box {
+      width: 90%;
+      max-width: 1400px;
+      background: #111827;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 0 40px rgba(59,130,246,0.2);
+      overflow-y: auto;
+    }
+
+    .question-content {
+      font-size: 32px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    /* CODE BLOCK STYLE */
+    pre {
+      background: #020617;
+      padding: 20px;
+      border-radius: 10px;
+      margin-top: 20px;
+      font-size: 20px;
+      overflow-x: auto;
+    }
+
+    /* FOOTER */
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-top: 2px solid rgba(255,255,255,0.1);
+      font-size: 20px;
+      color: #94A3B8;
+    }
+
+    .reward {
+      color: #3B82F6;
+      font-weight: 600;
+    }
+
+  </style>
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="badge {{DIFFICULTY_CLASS}}">
+      {{DIFFICULTY}}
+    </div>
+
+    <div class="title">
+      AUCTION ROUND
+    </div>
+
+    <div class="timer">
+      {{TIME_LIMIT}}
+    </div>
+  </div>
+
+  <!-- MAIN QUESTION -->
+  <div class="container">
+    <div class="question-box">
+      <div class="question-content">
+        {{QUESTION_CONTENT}}
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="reward">
+      Reward: {{REWARD_POINTS}}
+    </div>
+
+    <div>
+      Solve within given time
+    </div>
+  </div>
+
+</body>
+</html>

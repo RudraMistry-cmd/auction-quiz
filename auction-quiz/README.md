@@ -1,11 +1,14 @@
-# Auction Quiz System
+# Bid for C
 
-Realtime LAN-based auction quiz for college events. Teams bid with coins,
-winners solve tasks for reward points, all live on projector screens.
+Realtime LAN-based coding auction system for college events. Teams bid with coins,
+winners solve challenges for reward points, all live on projector screens.
+
+![Bid for C Logo](client/public/assets/logo.png)
 
 ## Requirements
 
 - Node.js 22+ (v24 recommended)
+- npm
 
 ## Quick Start
 
@@ -26,17 +29,86 @@ Then open:
 | Server  | 3000 | API + Socket.IO, binds LAN |
 | Client  | 5173 | Vite dev server            |
 
+## Routes
+
+| Route                      | Description                    |
+| -------------------------- | ------------------------------ |
+| `/`                        | Home page                      |
+| `/team`                    | Team registration + bidding    |
+| `/display/live`            | Live auction projector view    |
+| `/display/scores`          | Scoreboard projector view      |
+| `/control-panel-7f8a9b2c`  | Admin control panel (secret)   |
+
 ## Features
 
-- **Realtime bidding** — server-authoritative 60s auctions, 800ms rate limit, instant bid/timer broadcasts.
-- **Task system** — winners get 5-minute tasks (pause/resume/+30s controls), pass/fail verdicts, 30s undo window.
-- **Question engine** — import `.xlsx` banks (easy/medium/hard pools), admin picks per round, questions shown on every screen.
-- **Displays** — live auction projector view, scoreboard, team and admin screens.
+### Core System
+- **Realtime bidding** — Server-authoritative auctions with 800ms rate limit
+- **Multi-increment bidding** — +20 (navy) and +50 (gold) bid options
+- **Task system** — Winners get coding challenges with timer
+- **Sound effects** — 10 sound types with per-sound enable/disable + volume control
+- **Branding** — "Bid for C" branding across all screens with logo
 
-## Notes
+### Bidding Mechanics
+- Each team starts with coins
+- Bid to win coding challenges
+- Solve within time to earn rewards
+- Highest reward points wins
 
-- **No env setup required.** Defaults work out of the box:
-  - `PORT=3000`, `ADMIN_KEY=auction-admin`
-  - To override, copy `server/.env.example` to `server/.env` and edit it.
-- **DB auto-creates.** SQLite (WASM, no native build tools needed) initializes `server/data/` on first run with all tables and migrations.
-- **Resetting.** Stop the server, run `npm run db:reset --prefix server`, restart — teams, auctions, tasks, and questions are wiped for a fresh event.
+### Admin Features
+- Start/stop auctions
+- Set question images
+- Manual timer control (+30s)
+- Sound settings (global + per-sound)
+- Team management
+
+### Sound Events
+- `auction_start` / `auction_end`
+- `bid_small` (+20) / `bid_big` (+50)
+- `bid_win`
+- `timer_start` / `timer_end`
+- `pass` / `fail`
+- `tick`
+
+## Configuration
+
+### Environment Variables (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 3000 | Server port |
+| `ADMIN_SECRET` | 7f8a9b2c | Admin panel secret |
+| `ALLOW_REMOTE_ADMIN` | false | Allow remote admin access |
+
+### Resetting
+
+```bash
+# Stop server, then:
+npm run db:reset --prefix server
+# Restart server - fresh database
+```
+
+## Sound Files
+
+Place MP3 files in `client/public/sounds/`:
+- `auction_start.mp3`
+- `auction_end.mp3`
+- `bid_small.mp3`
+- `bid_big.mp3`
+- `bid_win.mp3`
+- `timer_start.mp3`
+- `timer_end.mp3`
+- `pass.mp3`
+- `fail.mp3`
+- `tick.mp3`
+
+Upload via Admin Panel → Sound Settings
+
+## Tech Stack
+
+- **Server**: Node.js, Express, Socket.IO, SQLite
+- **Client**: React, Vite, TypeScript
+- **Design**: Custom design system with tokens
+
+## License
+
+College event use only.

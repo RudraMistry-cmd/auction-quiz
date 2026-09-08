@@ -1,0 +1,12 @@
+<p><strong>Topic: Preprocessor Macro Pitfalls</strong></p>
+<p>What does this program print when compiled and run?</p>
+<pre><code>#include &lt;stdio.h&gt;
+
+#define SQUARE(x) x * x
+
+int main(void) {
+    int result = SQUARE(3 + 2);
+    printf("%d\n", result);
+    return 0;
+}</code></pre>
+<p><em>Remember how the C preprocessor performs textual substitution.</em></p>
