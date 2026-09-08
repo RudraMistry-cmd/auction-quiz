@@ -76,7 +76,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [timerBusy, setTimerBusy] = useState(false);
 
   // Image picker state
-  const [images, setImages] = useState<{ name: string; path: string; folder: string }[]>([]);
+  const [images, setImages] = useState<{ name: string; path: string; folder: string; used?: boolean }[]>([]);
   const [selectedImagePath, setSelectedImagePath] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const [currentImageSet, setCurrentImageSet] = useState<string | null>(null);
@@ -91,6 +91,14 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   });
   const [soundFiles, setSoundFiles] = useState<{ name: string; exists: boolean }[]>([]);
   const [uploadingSound, setUploadingSound] = useState<string | null>(null);
+
+  // Data Management state
+  const [dataPanelOpen, setDataPanelOpen] = useState(false);
+  const [allTeams, setAllTeams] = useState<any[]>([]);
+  const [dataEdits, setDataEdits] = useState<Record<string, any>>({});
+  const [dataBusy, setDataBusy] = useState(false);
+  const [dataConfirm, setDataConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
+  const [dataToast, setDataToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Pre-fill PASS reward from the round's default — editing stays optional.
   useEffect(() => {
@@ -262,6 +270,12 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     socket.on("timer:update", handleTimerUpdate);
     socket.on("question:image_set", handleImageSet);
 
+    const handleThemeChanged = (data: { theme: string }) => {
+      document.documentElement.setAttribute("data-theme", data.theme);
+      localStorage.setItem("theme", data.theme);
+    };
+    socket.on("theme:changed", handleThemeChanged);
+
     return () => {
       socket.off("auction:started", handleStarted);
       socket.off("auction:bid_update", handleBidUpdate);
@@ -271,6 +285,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       socket.off("scoreboard:updated", handleScores);
       socket.off("timer:update", handleTimerUpdate);
       socket.off("question:image_set", handleImageSet);
+      socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected]);
 
@@ -378,6 +393,51 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         setLastEvent(`Error: ${res.error || "update failed"}`);
       }
     });
+  };
+
+  const applyDataUpdate = async (teamId: string) => {
+    const edit = dataEdits[teamId];
+    if (!edit) return;
+
+    setDataBusy(true);
+    try {
+      const res = await fetch(`${getServerBase()}/admin/team/${teamId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-secret": secret,
+        },
+        body: JSON.stringify(edit),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update team");
+      }
+
+      setAllTeams((prev) =>
+        prev.map((t) => (t.teamId === teamId ? { ...t, ...data.team } : t))
+      );
+
+      setDataEdits((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+
+      setDataConfirm(null);
+      setDataToast({ type: "success", text: `Updated ${data.team?.teamName || "team"} successfully!` });
+      setTimeout(() => setDataToast(null), 3000);
+
+      fetchScoreboard();
+    } catch (err: any) {
+      console.error("[Data] Update error:", err);
+      setDataToast({ type: "error", text: err.message || "Failed to update team" });
+      setTimeout(() => setDataToast(null), 4000);
+      setDataConfirm(null);
+    } finally {
+      setDataBusy(false);
+    }
   };
 
   // Manual timer control functions
@@ -705,6 +765,197 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           )}
         </Card>
 
+        <Card title="Data Management" span={12}>
+          {/* Collapsible Header */}
+          <div
+            onClick={() => {
+              const nextState = !dataPanelOpen;
+              setDataPanelOpen(nextState);
+              if (nextState) {
+                // Fetch teams when opening
+                fetch(`${getServerBase()}/admin/teams`, {
+                  headers: { "x-admin-secret": secret },
+                })
+                  .then((r) => r.json())
+                  .then((data) => {
+                    if (data.success) setAllTeams(data.teams);
+                  })
+                  .catch((err) => console.error("[Data] Failed to fetch teams:", err));
+              }
+            }}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              cursor: "pointer", padding: "8px 0", userSelect: "none",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{
+                display: "inline-block", width: "8px", height: "8px",
+                borderRadius: "50%", backgroundColor: C.info,
+              }} />
+              <span style={{ fontWeight: 600, color: C.text }}>
+                Teams Database ({allTeams.length} teams)
+              </span>
+            </div>
+            <span style={{ color: C.muted, fontSize: "0.8rem" }}>
+              {dataPanelOpen ? "▲ Close" : "▼ View & Edit"}
+            </span>
+          </div>
+
+          {/* Collapsible Content */}
+          {dataPanelOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px", borderTop: `1px solid ${C.border}`, paddingTop: "16px" }}>
+              {/* Refresh Button */}
+              <button
+                onClick={() => {
+                  fetch(`${getServerBase()}/admin/teams`, {
+                    headers: { "x-admin-secret": secret },
+                  })
+                    .then((r) => r.json())
+                    .then((data) => {
+                      if (data.success) {
+                        setAllTeams(data.teams);
+                        setDataToast({ type: "success", text: "Teams refreshed" });
+                        setTimeout(() => setDataToast(null), 2000);
+                      }
+                    })
+                    .catch((err) => {
+                      console.error("[Data] Failed to refresh teams:", err);
+                      setDataToast({ type: "error", text: "Failed to refresh" });
+                      setTimeout(() => setDataToast(null), 3000);
+                    });
+                }}
+                style={{
+                  padding: "8px 16px", borderRadius: "6px",
+                  border: `1px solid ${C.border}`, backgroundColor: C.surface,
+                  cursor: "pointer", fontFamily: F.body, fontWeight: 600,
+                  fontSize: "0.8rem", color: C.text, alignSelf: "flex-start",
+                }}
+              >
+                ↻ Refresh Data
+              </button>
+
+              {/* Teams Table */}
+              {allTeams.length === 0 ? (
+                <div style={{ color: C.muted, fontSize: "0.85rem", textAlign: "center", padding: "16px" }}>
+                  No teams registered yet
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto", maxHeight: "400px", overflowY: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.75rem" }}>
+                    <thead>
+                      <tr style={{ borderBottom: `2px solid ${C.border}`, position: "sticky", top: 0, backgroundColor: C.surface }}>
+                        <th style={tableHeaderStyle}>Team Name</th>
+                        <th style={tableHeaderStyle}>Player 1</th>
+                        <th style={tableHeaderStyle}>Player 2</th>
+                        <th style={tableHeaderStyle}>Email</th>
+                        <th style={tableHeaderStyle}>Phone</th>
+                        <th style={tableHeaderStyle}>Coins</th>
+                        <th style={tableHeaderStyle}>Points</th>
+                        <th style={{ ...tableHeaderStyle, textAlign: "center" }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allTeams.map((team, i) => {
+                        const edit = dataEdits[team.teamId];
+                        return (
+                          <tr key={team.teamId} style={{ borderBottom: `1px solid ${C.border}`, backgroundColor: i % 2 === 0 ? C.bg : C.surface }}>
+                            <td style={{ ...tableCellStyle, fontWeight: 600 }}>{team.teamName}</td>
+                            <td style={tableCellStyle}>{team.player1}</td>
+                            <td style={tableCellStyle}>{team.player2}</td>
+                            <td style={tableCellStyle}>
+                              <input
+                                type="email"
+                                value={edit?.email ?? team.email ?? ""}
+                                onChange={(e) => setDataEdits((prev) => ({ ...prev, [team.teamId]: { ...prev[team.teamId], email: e.target.value } }))}
+                                style={{ ...tableInputStyle, minWidth: "160px" }}
+                                disabled={dataBusy}
+                              />
+                            </td>
+                            <td style={tableCellStyle}>
+                              <input
+                                type="text"
+                                value={edit?.phone ?? team.phone ?? ""}
+                                onChange={(e) => setDataEdits((prev) => ({ ...prev, [team.teamId]: { ...prev[team.teamId], phone: e.target.value } }))}
+                                style={{ ...tableInputStyle, minWidth: "110px" }}
+                                disabled={dataBusy}
+                              />
+                            </td>
+                            <td style={tableCellStyle}>
+                              <input
+                                type="number"
+                                min={0}
+                                value={edit?.bid_coins ?? team.bid_coins ?? 0}
+                                onChange={(e) => setDataEdits((prev) => ({ ...prev, [team.teamId]: { ...prev[team.teamId], bid_coins: parseInt(e.target.value, 10) || 0 } }))}
+                                style={{ ...tableInputStyle, width: "70px" }}
+                                disabled={dataBusy}
+                              />
+                            </td>
+                            <td style={tableCellStyle}>
+                              <input
+                                type="number"
+                                min={0}
+                                value={edit?.reward_points ?? team.reward_points ?? 0}
+                                onChange={(e) => setDataEdits((prev) => ({ ...prev, [team.teamId]: { ...prev[team.teamId], reward_points: parseInt(e.target.value, 10) || 0 } }))}
+                                style={{ ...tableInputStyle, width: "70px" }}
+                                disabled={dataBusy}
+                              />
+                            </td>
+                            <td style={{ ...tableCellStyle, textAlign: "center" }}>
+                              <button
+                                onClick={() => setDataConfirm({ teamId: team.teamId, teamName: team.teamName })}
+                                disabled={!edit || dataBusy}
+                                style={{
+                                  padding: "5px 14px", borderRadius: "4px",
+                                  border: "none",
+                                  backgroundColor: edit ? C.success : C.border,
+                                  color: edit ? "#fff" : C.muted,
+                                  cursor: (!edit || dataBusy) ? "not-allowed" : "pointer",
+                                  fontWeight: 600, fontSize: "0.75rem",
+                                  opacity: (!edit || dataBusy) ? 0.4 : 1,
+                                  transition: "all 0.15s ease",
+                                }}
+                              >
+                                Save
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Theme Settings" span={4}>
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Switch theme across all connected screens.</p>
+          <div style={{ display: "flex", gap: "8px" }}>
+            {(["default", "bidforc"] as const).map((themeOption) => (
+              <button
+                key={themeOption}
+                onClick={() => {
+                  socket?.emit("admin:theme", { theme: themeOption }, (res) => {
+                    if (!res.success) console.error("[Theme] Failed:", res.error);
+                  });
+                }}
+                style={{
+                  flex: 1, padding: "12px 16px", borderRadius: "8px",
+                  border: `2px solid ${C.border}`,
+                  backgroundColor: C.surface,
+                  cursor: "pointer", transition: "all 0.2s ease",
+                  fontFamily: F.heading, fontWeight: 600, fontSize: "0.85rem",
+                  color: C.text,
+                }}
+              >
+                {themeOption === "default" ? "Default" : "Bid for C"}
+              </button>
+            ))}
+          </div>
+        </Card>
+
         <Card title="Team Management" span={4} scroll>
           <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Edit bid coins and reward points. Changes persist to the database.</p>
           {scoreboard.length === 0 ? (
@@ -818,6 +1069,65 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Data Management team update confirmation modal */}
+      {dataConfirm && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Confirm Team Update</h3>
+            <p style={styles.modalText}>
+              Save changes to <strong>{dataConfirm.teamName}</strong>?
+            </p>
+            {dataEdits[dataConfirm.teamId] && (
+              <div style={styles.modalChanges}>
+                {dataEdits[dataConfirm.teamId].bid_coins !== undefined && (
+                  <div>Coins → <strong>{dataEdits[dataConfirm.teamId].bid_coins}</strong></div>
+                )}
+                {dataEdits[dataConfirm.teamId].reward_points !== undefined && (
+                  <div>Points → <strong>{dataEdits[dataConfirm.teamId].reward_points}</strong></div>
+                )}
+                {dataEdits[dataConfirm.teamId].email !== undefined && (
+                  <div>Email → <strong>{dataEdits[dataConfirm.teamId].email}</strong></div>
+                )}
+                {dataEdits[dataConfirm.teamId].phone !== undefined && (
+                  <div>Phone → <strong>{dataEdits[dataConfirm.teamId].phone}</strong></div>
+                )}
+              </div>
+            )}
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => applyDataUpdate(dataConfirm.teamId)}
+                disabled={dataBusy}
+                style={styles.modalConfirmBtn}
+              >
+                {dataBusy ? "Saving…" : "Confirm"}
+              </button>
+              <button
+                onClick={() => setDataConfirm(null)}
+                disabled={dataBusy}
+                style={styles.modalCancelBtn}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Data Management Toast Notification */}
+      {dataToast && (
+        <div style={{
+          position: "fixed", top: "24px", right: "24px",
+          backgroundColor: dataToast.type === "success" ? C.success : C.danger,
+          color: "#FFFFFF", fontFamily: F.heading, fontWeight: 700, fontSize: "0.9rem",
+          padding: "12px 24px", borderRadius: tokens.radius.md,
+          boxShadow: tokens.shadow.lg, zIndex: 9999,
+          display: "flex", alignItems: "center", gap: "8px",
+        }}>
+          <span>{dataToast.type === "success" ? "✓" : "⚠"}</span>
+          <span>{dataToast.text}</span>
         </div>
       )}
     </div>
@@ -1571,4 +1881,36 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     textAlign: "center" as const,
   },
+};
+
+/* ─── Table Styles for Data Management ─── */
+const tableHeaderStyle: React.CSSProperties = {
+  padding: "8px 6px",
+  textAlign: "left",
+  fontFamily: F.body,
+  fontWeight: 700,
+  fontSize: "0.7rem",
+  color: C.muted,
+  letterSpacing: "0.05em",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+
+const tableCellStyle: React.CSSProperties = {
+  padding: "6px",
+  fontFamily: F.body,
+  fontSize: "0.75rem",
+  color: C.text,
+  whiteSpace: "nowrap",
+};
+
+const tableInputStyle: React.CSSProperties = {
+  width: "80px",
+  padding: "4px 6px",
+  borderRadius: "4px",
+  border: `1px solid ${C.border}`,
+  backgroundColor: C.bg,
+  color: C.text,
+  fontSize: "0.75rem",
+  fontFamily: F.body,
 };

@@ -47,6 +47,8 @@ export async function getDb(): Promise<SqlJsDatabase> {
   ensureColumn(db, "tasks", "questionId", "TEXT");
   ensureColumn(db, "tasks", "options", "TEXT");
   ensureColumn(db, "tasks", "time_limit", "INTEGER NOT NULL DEFAULT 300");
+  ensureColumn(db, "teams", "phone", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "teams", "email", "TEXT NOT NULL DEFAULT ''");
 
   // Auto-save every 5 seconds (safety net — mutations persist immediately)
   saveInterval = setInterval(persistDb, 5000);

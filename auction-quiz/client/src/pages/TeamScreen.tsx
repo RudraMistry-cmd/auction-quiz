@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
-import { BrandHeader } from "../components/BrandHeader";
 import { tokens } from "../design-system";
 import TaskTimer from "../components/TaskTimer";
 import type { Team, Auction, Bid, TaskResultEvent } from "../shared/types";
@@ -15,15 +14,82 @@ interface TeamScreenProps {
 
 /* ─── Sub-components ─── */
 
-function TimerPill({ timeLeft, isUrgent }: { timeLeft: number; isUrgent: boolean }) {
+function DashboardCard({
+  label,
+  value,
+  color,
+  flash,
+  icon,
+  size = "normal",
+}: {
+  label: string;
+  value: number;
+  color: string;
+  flash: boolean;
+  icon: React.ReactNode;
+  size?: "normal" | "large";
+}) {
+  const isLarge = size === "large";
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: "10px",
-      backgroundColor: isUrgent ? C.dangerBg : C.surface,
-      border: `2px solid ${isUrgent ? C.danger : C.border}`,
-      borderRadius: tokens.radius.lg,
-      padding: "12px 28px",
+      display: "flex", flexDirection: "column", alignItems: "center",
+      backgroundColor: C.surface,
+      border: `2px solid ${flash ? color : C.border}`,
+      borderRadius: tokens.radius.xl,
+      padding: isLarge ? "32px 48px" : "24px 36px",
+      minWidth: isLarge ? "200px" : "160px",
+      boxShadow: flash ? `0 0 32px ${color}44` : tokens.shadow.md,
       transition: `all ${tokens.transition.base}`,
+      animation: flash ? "cardFlash 0.6s ease" : "none",
+    }}>
+      <div style={{ marginBottom: "8px", color, opacity: 0.8 }}>{icon}</div>
+      <span style={{
+        fontFamily: F.body, fontWeight: 600, fontSize: "0.7rem",
+        color: C.muted, letterSpacing: "0.18em", textTransform: "uppercase",
+        marginBottom: "8px",
+      }}>{label}</span>
+      <span style={{
+        fontFamily: F.heading, fontWeight: 900,
+        fontSize: isLarge ? "clamp(3rem, 10vw, 5rem)" : "clamp(2rem, 6vw, 3.2rem)",
+        color, fontVariantNumeric: "tabular-nums", lineHeight: 1,
+      }}>{value}</span>
+    </div>
+  );
+}
+
+function StatusBanner({ status, color }: { status: string; color: string }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "center", gap: "12px",
+      padding: "16px 32px",
+      borderRadius: tokens.radius.full,
+      backgroundColor: `${color}15`,
+      border: `2px solid ${color}40`,
+      animation: "statusPulse 2s ease-in-out infinite",
+    }}>
+      <div style={{
+        width: "12px", height: "12px", borderRadius: "50%",
+        backgroundColor: color,
+        boxShadow: `0 0 12px ${color}`,
+        animation: "dotPulse 1.5s ease-in-out infinite",
+      }} />
+      <span style={{
+        fontFamily: F.heading, fontWeight: 700,
+        fontSize: "clamp(1rem, 2.5vw, 1.3rem)",
+        color, letterSpacing: "0.05em",
+      }}>{status}</span>
+    </div>
+  );
+}
+
+function TimerDisplay({ timeLeft, isUrgent }: { timeLeft: number; isUrgent: boolean }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "12px",
+      padding: "12px 24px",
+      borderRadius: tokens.radius.lg,
+      backgroundColor: isUrgent ? `${C.danger}15` : C.surface,
+      border: `2px solid ${isUrgent ? C.danger : C.border}`,
     }}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
         stroke={isUrgent ? C.danger : C.primary} strokeWidth="2.5" strokeLinecap="round">
@@ -31,10 +97,10 @@ function TimerPill({ timeLeft, isUrgent }: { timeLeft: number; isUrgent: boolean
         <polyline points="12 6 12 12 16 14"/>
       </svg>
       <span style={{
-        fontFamily: F.heading, fontWeight: 800, fontSize: "clamp(2.5rem, 8vw, 4rem)",
+        fontFamily: F.heading, fontWeight: 800,
+        fontSize: "clamp(1.8rem, 6vw, 2.8rem)",
         color: isUrgent ? C.danger : C.primary,
-        fontVariantNumeric: "tabular-nums",
-        lineHeight: 1,
+        fontVariantNumeric: "tabular-nums", lineHeight: 1,
       }}>
         {formatClock(timeLeft)}
       </span>
@@ -42,31 +108,12 @@ function TimerPill({ timeLeft, isUrgent }: { timeLeft: number; isUrgent: boolean
   );
 }
 
-function StatCard({ label, value, color, flash }: { label: string; value: number; color: string; flash: boolean }) {
-  return (
-    <div style={{
-      flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
-      backgroundColor: C.surface, border: `1px solid ${C.border}`,
-      borderRadius: tokens.radius.lg, padding: "16px 12px",
-      transition: `all ${tokens.transition.base}`,
-      boxShadow: flash ? `0 0 20px ${color}33` : "none",
-    }}>
-      <span style={{
-        fontFamily: F.body, fontWeight: 600, fontSize: "0.7rem",
-        color: C.muted, letterSpacing: "0.15em", textTransform: "uppercase",
-        marginBottom: "6px",
-      }}>{label}</span>
-      <span style={{
-        fontFamily: F.heading, fontWeight: 800,
-        fontSize: "clamp(1.8rem, 5vw, 2.8rem)",
-        color, fontVariantNumeric: "tabular-nums", lineHeight: 1,
-        transition: `color ${tokens.transition.base}`,
-      }}>{value}</span>
-    </div>
-  );
-}
-
-function BidButton({ onClick, disabled, coins, bidAmount, leading, isTeam, increment }: { onClick: () => void; disabled: boolean; coins: number; bidAmount: number; leading: string; isTeam: string; increment: number }) {
+function BidButton({
+  onClick, disabled, coins, bidAmount, leading, isTeam, increment,
+}: {
+  onClick: () => void; disabled: boolean; coins: number;
+  bidAmount: number; leading: string; isTeam: string; increment: number;
+}) {
   const isLeading = leading === isTeam;
   const cantAfford = coins < bidAmount;
   const isGold = increment === 50;
@@ -79,20 +126,21 @@ function BidButton({ onClick, disabled, coins, bidAmount, leading, isTeam, incre
       onClick={onClick}
       disabled={disabled || isLeading || cantAfford}
       style={{
-        flex: 1, padding: "24px 32px",
+        flex: 1, padding: "20px 28px",
         borderRadius: tokens.radius.lg,
         border: isGold && !isLeading && !cantAfford ? `2px solid ${C.primary}` : "none",
         backgroundColor: bgColor,
         color: textColor,
         fontFamily: F.heading, fontWeight: 900,
-        fontSize: "clamp(1.4rem, 4vw, 1.8rem)",
+        fontSize: "clamp(1.2rem, 3vw, 1.6rem)",
         letterSpacing: "0.05em",
         cursor: disabled || isLeading || cantAfford ? "not-allowed" : "pointer",
-        opacity: disabled || isLeading || cantAfford ? 0.5 : 1,
-        boxShadow: disabled || isLeading || cantAfford ? "none" : isGold ? `0 4px 24px ${C.accent}66` : `0 4px 24px ${C.primary}44`,
+        opacity: disabled || isLeading || cantAfford ? 0.4 : 1,
+        boxShadow: disabled || isLeading || cantAfford ? "none" : isGold
+          ? `0 4px 20px ${C.accent}55`
+          : `0 4px 20px ${C.primary}44`,
         transition: `all ${tokens.transition.fast}`,
         userSelect: "none",
-        transform: disabled || isLeading || cantAfford ? "none" : "scale(1)",
       }}
     >
       {label}
@@ -138,8 +186,70 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
   const teamRef = useRef<Team | null>(null);
   teamRef.current = team;
 
+  type FormField = "teamName" | "player1" | "player2" | "phone" | "email";
+
   // Registration form
   const [form, setForm] = useState({ teamName: "", player1: "", player2: "", phone: "", email: "" });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [formTouched, setFormTouched] = useState<Record<string, boolean>>({});
+
+  // Validation functions
+  const validateField = (name: string, value: string): string => {
+    const trimmed = value.trim();
+    switch (name) {
+      case "teamName":
+        if (trimmed.length < 3 || trimmed.length > 30) return "Team name must be 3-30 characters";
+        if (!/^[a-zA-Z0-9 ]+$/.test(trimmed)) return "Team name must be alphanumeric (letters, numbers, spaces only)";
+        return "";
+      case "player1":
+      case "player2":
+        if (trimmed.length === 0) return "Player name is required";
+        if (!/^[a-zA-Z ]+$/.test(trimmed)) return "Player name must contain only letters";
+        return "";
+      case "email":
+        if (trimmed.length === 0) return "Email is required";
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "Please enter a valid email address";
+        return "";
+      case "phone":
+        if (trimmed.length === 0) return "Phone number is required";
+        if (!/^[6-9]\d{9}$/.test(trimmed)) return "Enter a valid 10-digit Indian number (starting with 6-9)";
+        return "";
+      default:
+        return "";
+    }
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    const touched: Record<string, boolean> = {};
+    let valid = true;
+    for (const [key, value] of Object.entries(form)) {
+      const error = validateField(key, value);
+      touched[key] = true;
+      if (error) {
+        errors[key] = error;
+        valid = false;
+      }
+    }
+    setFormTouched(touched);
+    setFormErrors(errors);
+    return valid;
+  };
+
+  const isFormValid = (): boolean => {
+    return Object.entries(form).every(([key, value]) => validateField(key, value) === "");
+  };
+
+  const handleFieldChange = (name: FormField, value: string) => {
+    setForm((prev) => ({ ...prev, [name]: value }));
+    const err = validateField(name, value);
+    setFormErrors((prev) => ({ ...prev, [name]: err }));
+  };
+
+  const handleFieldBlur = (name: FormField) => {
+    setFormTouched((prev) => ({ ...prev, [name]: true }));
+    setFormErrors((prev) => ({ ...prev, [name]: validateField(name, form[name]) }));
+  };
 
   const flash = (setter: (v: boolean) => void) => {
     setter(true);
@@ -240,6 +350,12 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
     socket.on("auction:cleared", handleCleared);
     socket.on("task:result", handleTaskResult);
 
+    const handleThemeChanged = (data: { theme: string }) => {
+      document.documentElement.setAttribute("data-theme", data.theme);
+      localStorage.setItem("theme", data.theme);
+    };
+    socket.on("theme:changed", handleThemeChanged);
+
     return () => {
       socket.off("auction:started", handleStarted);
       socket.off("auction:bid_update", handleBidUpdate);
@@ -247,6 +363,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
       socket.off("auction:ended", handleEnded);
       socket.off("auction:cleared", handleCleared);
       socket.off("task:result", handleTaskResult);
+      socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected]);
 
@@ -271,7 +388,24 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!socket) return;
-    socket.emit("client:register", form, (res: any) => {
+
+    // Validate all fields
+    if (!validateForm()) {
+      setBidMessage({ type: "error", text: "Please fix the errors below" });
+      setTimeout(() => setBidMessage(null), 3000);
+      return;
+    }
+
+    // Trim all inputs before sending
+    const trimmedForm = {
+      teamName: form.teamName.trim(),
+      player1: form.player1.trim(),
+      player2: form.player2.trim(),
+      email: form.email.trim().toLowerCase(),
+      phone: form.phone.trim(),
+    };
+
+    socket.emit("client:register", trimmedForm, (res: any) => {
       if (res.success && res.team && res.sessionToken) {
         setTeam(res.team); setCoins(res.team.bid_coins); setPoints(res.team.reward_points);
         localStorage.setItem("sessionToken", res.sessionToken);
@@ -287,12 +421,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
   if (!team) {
     return (
       <div style={regRoot}>
-        <style>{`
-          @keyframes regFadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-        `}</style>
+        <style>{dashboardStyles}</style>
 
         {/* Header */}
         <header style={regHeader}>
@@ -322,10 +451,10 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
                 "Solve within time to earn rewards",
                 "Highest reward points wins",
               ].map((rule, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#D4AF37", flexShrink: 0 }} />
-                  <span style={{ fontFamily: F.body, fontSize: "0.9rem", color: "#CBD5E1" }}>{rule}</span>
-                </div>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: C.accent, flexShrink: 0 }} />
+                    <span style={{ fontFamily: F.body, fontSize: "0.9rem", color: "#CBD5E1" }}>{rule}</span>
+                  </div>
               ))}
             </div>
 
@@ -346,23 +475,43 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
                   { key: "player1", label: "Player 1", placeholder: "First player name" },
                   { key: "player2", label: "Player 2", placeholder: "Second player name" },
                   { key: "email", label: "Email", placeholder: "team@example.com", type: "email" },
-                  { key: "phone", label: "Contact Number", placeholder: "Phone number" },
+                  { key: "phone", label: "Contact Number", placeholder: "10-digit phone number" },
                 ] as Array<{ key: "teamName" | "player1" | "player2" | "email" | "phone"; label: string; placeholder: string; type?: string }>).map((field) => (
                   <div key={field.key}>
                     <label style={{ fontFamily: F.body, fontWeight: 600, fontSize: "0.75rem", color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px", display: "block" }}>
                       {field.label}
                     </label>
                     <input
-                      style={regInput}
+                      style={{
+                        ...regInput,
+                        borderColor: formErrors[field.key] && formTouched[field.key] ? C.danger : regInput.borderColor,
+                      }}
                       type={field.type || "text"}
                       placeholder={field.placeholder}
                       value={form[field.key]}
-                      onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                      onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                      onBlur={() => handleFieldBlur(field.key)}
                       required
                     />
+                    {formErrors[field.key] && formTouched[field.key] && (
+                      <div style={{
+                        fontFamily: F.body, fontSize: "0.7rem", color: C.danger,
+                        marginTop: "4px", fontWeight: 500,
+                      }}>
+                        {formErrors[field.key]}
+                      </div>
+                    )}
                   </div>
                 ))}
-                <button type="submit" style={regBtn}>
+                <button
+                  type="submit"
+                  disabled={!isFormValid()}
+                  style={{
+                    ...regBtn,
+                    opacity: isFormValid() ? 1 : 0.5,
+                    cursor: isFormValid() ? "pointer" : "not-allowed",
+                  }}
+                >
                   Enter Auction
                 </button>
               </form>
@@ -375,7 +524,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
           <div style={regFooterContent}>
             {/* About */}
             <div style={regFooterSection}>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: "#D4AF37", marginBottom: "12px", letterSpacing: "0.05em" }}>About</div>
+              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: C.accent, marginBottom: "12px", letterSpacing: "0.05em" }}>About</div>
               <p style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#94A3B8", lineHeight: 1.6 }}>
                 Bid for C is a competitive coding auction event where teams bid coins to solve challenges.
               </p>
@@ -383,11 +532,11 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
 
             {/* How it works */}
             <div style={regFooterSection}>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: "#D4AF37", marginBottom: "12px", letterSpacing: "0.05em" }}>How it works</div>
+              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: C.accent, marginBottom: "12px", letterSpacing: "0.05em" }}>How it works</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {["Bid to win a problem", "Solve within given time", "Admin verifies result", "Earn reward points"].map((step, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "0.75rem", color: "#D4AF37" }}>{i + 1}.</span>
+                    <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "0.75rem", color: C.accent }}>{i + 1}.</span>
                     <span style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#94A3B8" }}>{step}</span>
                   </div>
                 ))}
@@ -396,7 +545,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
 
             {/* Winning Criteria */}
             <div style={regFooterSection}>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: "#D4AF37", marginBottom: "12px", letterSpacing: "0.05em" }}>Winning Criteria</div>
+              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: C.accent, marginBottom: "12px", letterSpacing: "0.05em" }}>Winning Criteria</div>
               <p style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#94A3B8", lineHeight: 1.6 }}>
                 Team with highest reward points wins. Ties resolved by remaining coins.
               </p>
@@ -415,39 +564,41 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
   if (phase === "task" && task) {
     const isWinner = task.teamId === team.teamId;
     return (
-      <div style={root}>
+      <div style={dashRoot}>
+        <style>{dashboardStyles}</style>
         <FeedbackToast message={bidMessage} />
-        <div style={topBar}>
-          <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1.1rem", color: C.primary }}>{team.teamName}</span>
-          <div style={{ display: "flex", gap: "12px" }}>
-            <StatCard label="COINS" value={coins} color={C.accent} flash={coinFlash} />
-            <StatCard label="POINTS" value={points} color={C.success} flash={pointsFlash} />
-          </div>
+
+        {/* Team Header */}
+        <div style={dashHeader}>
+          <div style={dashTeamName}>{team.teamName}</div>
+          <button onClick={onLogout} style={btnGhost}>Logout</button>
         </div>
 
-        <div style={stage}>
-          {isWinner ? (
-            <>
-              <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "clamp(2rem, 6vw, 3.5rem)", color: C.accent, marginBottom: "8px" }}>
-                YOUR TASK
-              </div>
-              <div style={{ fontFamily: F.body, fontSize: "1rem", color: C.muted, marginBottom: "16px" }}>
-                Solve the task on the main display
-              </div>
-              <TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} size="medium" />
-            </>
-          ) : (
-            <>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "clamp(1.2rem, 4vw, 2rem)", color: C.muted, marginBottom: "8px" }}>
-                <span style={{ color: C.primary }}>{task.teamName}</span> is solving
-              </div>
-              <TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} size="medium" />
-              <div style={{ fontFamily: F.body, fontSize: "0.9rem", color: C.muted, marginTop: "8px" }}>
-                Task in progress on main display
-              </div>
-            </>
-          )}
-          <div style={{ fontFamily: F.body, fontSize: "0.85rem", color: C.muted, marginTop: "16px" }}>Final bid: {task.finalBid}</div>
+        {/* Stat Cards */}
+        <div style={dashStatRow}>
+          <DashboardCard
+            label="COINS" value={coins} color={C.accent} flash={coinFlash}
+            icon={<CoinIcon />} size="large"
+          />
+          <DashboardCard
+            label="POINTS" value={points} color={C.success} flash={pointsFlash}
+            icon={<PointsIcon />} size="large"
+          />
+        </div>
+
+        {/* Status */}
+        <StatusBanner
+          status={isWinner ? "YOUR TASK — SOLVE NOW" : `${task.teamName} is solving`}
+          color={isWinner ? C.accent : C.muted}
+        />
+
+        {/* Task Timer */}
+        <div style={{ marginTop: "24px" }}>
+          <TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} size="medium" />
+        </div>
+
+        <div style={{ fontFamily: F.body, fontSize: "0.9rem", color: C.muted, marginTop: "12px" }}>
+          Final bid: {task.finalBid} coins
         </div>
       </div>
     );
@@ -456,67 +607,75 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
   /* ── Waiting State ── */
   if (!auction) {
     return (
-      <div style={root}>
+      <div style={dashRoot}>
+        <style>{dashboardStyles}</style>
         <FeedbackToast message={bidMessage} />
-        <div style={topBar}>
-          <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1.1rem", color: C.primary }}>{team.teamName}</span>
+
+        {/* Team Header */}
+        <div style={dashHeader}>
+          <div style={dashTeamName}>{team.teamName}</div>
           <button onClick={onLogout} style={btnGhost}>Logout</button>
         </div>
-        <div style={stage}>
-          <div style={{ display: "flex", gap: "16px", marginBottom: "32px" }}>
-            <StatCard label="COINS" value={coins} color={C.accent} flash={coinFlash} />
-            <StatCard label="POINTS" value={points} color={C.success} flash={pointsFlash} />
-          </div>
+
+        {/* Stat Cards */}
+        <div style={dashStatRow}>
+          <DashboardCard
+            label="COINS" value={coins} color={C.accent} flash={coinFlash}
+            icon={<CoinIcon />} size="large"
+          />
+          <DashboardCard
+            label="POINTS" value={points} color={C.success} flash={pointsFlash}
+            icon={<PointsIcon />} size="large"
+          />
+        </div>
+
+        {/* Status */}
+        <StatusBanner
+          status={auctionCleared ? "NEXT AUCTION SOON" : "WAITING FOR AUCTION"}
+          color={C.info}
+        />
+
+        {/* Connection */}
+        <div style={{
+          marginTop: "24px",
+          fontFamily: F.body, fontSize: "0.85rem",
+          color: connected ? C.success : C.danger,
+          display: "flex", alignItems: "center", gap: "8px",
+        }}>
           <div style={{
-            fontFamily: F.heading, fontWeight: 700,
-            fontSize: "clamp(1.2rem, 3vw, 1.8rem)",
-            color: C.text, marginBottom: "8px",
-          }}>{auctionCleared ? "Next auction starting soon" : "Waiting to start..."}</div>
-          <div style={{ fontFamily: F.body, fontSize: "0.9rem", color: C.muted }}>
-            {connected ? "Connected" : "Reconnecting..."}
-          </div>
+            width: "8px", height: "8px", borderRadius: "50%",
+            backgroundColor: connected ? C.success : C.danger,
+          }} />
+          {connected ? "Connected" : "Reconnecting..."}
         </div>
       </div>
     );
   }
 
   /* ── Active Auction ── */
+  const isLeading = leadingTeam === team.teamName;
   return (
-    <div style={root}>
-      <style>{`
-        @keyframes toastSlide {
-          from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-          to { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-        @keyframes bidPulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.03); }
-        }
-      `}</style>
-
+    <div style={dashRoot}>
+      <style>{dashboardStyles}</style>
       <FeedbackToast message={bidMessage} />
 
-      {/* Top bar: team name + logout */}
-      <div style={topBar}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <BrandHeader variant="team" />
-          <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1.1rem", color: C.primary }}>{team.teamName}</span>
-        </div>
+      {/* Team Header */}
+      <div style={dashHeader}>
+        <div style={dashTeamName}>{team.teamName}</div>
         <button onClick={onLogout} style={btnGhost}>Logout</button>
       </div>
 
       {/* Timer */}
       <div style={{ marginBottom: "24px" }}>
-        <TimerPill timeLeft={timer} isUrgent={timer <= 10} />
+        <TimerDisplay timeLeft={timer} isUrgent={timer <= 10} />
       </div>
 
-      {/* Current Bid - center hero */}
+      {/* Current Bid Hero */}
       <div style={{
         backgroundColor: C.surface, border: `2px solid ${C.border}`,
-        borderRadius: tokens.radius.xl, padding: "20px 40px",
-        marginBottom: "8px", width: "100%", maxWidth: "400px",
+        borderRadius: tokens.radius.xl, padding: "24px 48px",
+        marginBottom: "8px", textAlign: "center",
         boxShadow: tokens.shadow.md,
-        textAlign: "center",
       }}>
         <div style={{
           fontFamily: F.body, fontWeight: 600, fontSize: "0.7rem",
@@ -524,52 +683,58 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
           marginBottom: "4px",
         }}>CURRENT BID</div>
         <div style={{
-          fontFamily: F.heading, fontWeight: 800,
-          fontSize: "clamp(3rem, 12vw, 5rem)",
+          fontFamily: F.heading, fontWeight: 900,
+          fontSize: "clamp(3.5rem, 14vw, 6rem)",
           color: C.primary, fontVariantNumeric: "tabular-nums", lineHeight: 1,
         }}>{currentBid}</div>
       </div>
 
       {/* Next Bids */}
-      <div style={{
-        display: "flex", gap: "16px", justifyContent: "center",
-        marginBottom: "20px",
-      }}>
+      <div style={{ display: "flex", gap: "12px", marginBottom: "24px" }}>
         <div style={{
-          fontFamily: F.body, fontWeight: 600, fontSize: "0.9rem",
-          color: C.primary,
+          fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
+          color: C.primary, backgroundColor: C.surface,
+          border: `2px solid ${C.border}`, borderRadius: tokens.radius.md,
+          padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px",
         }}>
-          Next: <span style={{ fontFamily: F.heading, fontWeight: 800, color: C.accent }}>{currentBid + 20}</span>
-          <span style={{ color: C.muted, fontSize: "0.75rem" }}> (+20)</span>
+          <span style={{ color: C.muted, fontFamily: F.body, fontSize: "0.85rem" }}>+20 →</span>
+          <span style={{ color: C.accent }}>{currentBid + 20}</span>
         </div>
         <div style={{
-          fontFamily: F.body, fontWeight: 600, fontSize: "0.9rem",
-          color: C.primary,
+          fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
+          color: C.primary, backgroundColor: C.accent,
+          border: `2px solid ${C.primary}`, borderRadius: tokens.radius.md,
+          padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px",
+          boxShadow: `0 2px 12px ${C.accent}44`,
         }}>
-          Next: <span style={{ fontFamily: F.heading, fontWeight: 800, color: C.accent }}>{currentBid + 50}</span>
-          <span style={{ color: C.muted, fontSize: "0.75rem" }}> (+50)</span>
+          <span style={{ color: C.primary, fontFamily: F.body, fontSize: "0.85rem" }}>+50 →</span>
+          <span style={{ color: C.primary }}>{currentBid + 50}</span>
         </div>
       </div>
 
-      {/* Stats grid */}
-      <div style={{ display: "flex", gap: "12px", width: "100%", maxWidth: "400px", marginBottom: "24px" }}>
-        <StatCard label="COINS" value={coins} color={C.accent} flash={coinFlash} />
-        <StatCard label="POINTS" value={points} color={C.success} flash={pointsFlash} />
+      {/* Stat Cards */}
+      <div style={dashStatRow}>
+        <DashboardCard
+          label="COINS" value={coins} color={C.accent} flash={coinFlash}
+          icon={<CoinIcon />}
+        />
+        <DashboardCard
+          label="POINTS" value={points} color={C.success} flash={pointsFlash}
+          icon={<PointsIcon />}
+        />
       </div>
 
-      {/* Leading team */}
-      {leadingTeam && (
-        <div style={{
-          fontFamily: F.body, fontWeight: 600, fontSize: "0.9rem",
-          color: C.muted, marginBottom: "12px",
-        }}>
-          Leading: <span style={{ color: C.primary, fontWeight: 700 }}>{leadingTeam}</span>
-        </div>
-      )}
+      {/* Status Banner */}
+      <div style={{ marginTop: "20px" }}>
+        <StatusBanner
+          status={isLeading ? "YOU ARE LEADING" : "BIDDING ACTIVE"}
+          color={isLeading ? C.success : C.info}
+        />
+      </div>
 
-      {/* Bid buttons */}
+      {/* Bid Buttons */}
       {isActive && (
-        <div style={{ width: "100%", maxWidth: "420px" }}>
+        <div style={{ width: "100%", maxWidth: "420px", marginTop: "24px" }}>
           <div style={{ display: "flex", gap: "16px" }}>
             <BidButton
               onClick={() => handleBid(20)}
@@ -590,36 +755,57 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
               increment={50}
             />
           </div>
+          <div style={{
+            marginTop: "12px",
+            fontFamily: F.body, fontSize: "0.75rem",
+            color: C.muted, textAlign: "center",
+          }}>
+            Press ← for +20  |  Press → for +50
+          </div>
         </div>
       )}
 
       {/* Ended */}
       {!isActive && auction.status === "completed" && (
         <div style={{
+          marginTop: "20px", padding: "16px 32px",
+          borderRadius: tokens.radius.lg,
+          backgroundColor: C.surface, border: `2px solid ${C.border}`,
           fontFamily: F.heading, fontWeight: 700, fontSize: "1.2rem",
-          color: C.muted, marginTop: "16px",
-        }}>Auction Ended</div>
+          color: C.muted, textAlign: "center",
+        }}>
+          Auction Ended
+        </div>
       )}
     </div>
   );
 }
 
 /* ─── Layout ─── */
-const root: React.CSSProperties = {
+const dashRoot: React.CSSProperties = {
   minHeight: "100vh", display: "flex", flexDirection: "column",
-  alignItems: "center", backgroundColor: C.bg, color: C.text,
+  alignItems: "center", justifyContent: "center",
+  backgroundColor: C.bg, color: C.text,
   fontFamily: F.body, userSelect: "none",
-  padding: "clamp(16px, 3vw, 32px)",
+  padding: "clamp(24px, 4vw, 48px)",
+  gap: "20px",
 };
 
-const topBar: React.CSSProperties = {
+const dashHeader: React.CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "space-between",
-  width: "100%", maxWidth: "500px", marginBottom: "24px",
+  width: "100%", maxWidth: "500px", marginBottom: "8px",
 };
 
-const stage: React.CSSProperties = {
-  flex: 1, display: "flex", flexDirection: "column",
-  alignItems: "center", justifyContent: "center", gap: "16px", width: "100%",
+const dashTeamName: React.CSSProperties = {
+  fontFamily: F.heading, fontWeight: 900,
+  fontSize: "clamp(2rem, 6vw, 3.5rem)",
+  color: C.primary, letterSpacing: "0.03em",
+  lineHeight: 1,
+};
+
+const dashStatRow: React.CSSProperties = {
+  display: "flex", gap: "20px", justifyContent: "center",
+  flexWrap: "wrap",
 };
 
 const btnGhost: React.CSSProperties = {
@@ -630,10 +816,53 @@ const btnGhost: React.CSSProperties = {
   transition: `all ${tokens.transition.fast}`,
 };
 
+/* ─── SVG Icons ─── */
+function CoinIcon() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 6v12M8 9.5c0-1.38 1.79-2.5 4-2.5s4 1.12 4 2.5-1.79 2.5-4 2.5-4 1.12-4 2.5 1.79 2.5 4 2.5"/>
+    </svg>
+  );
+}
+
+function PointsIcon() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={C.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>
+  );
+}
+
+/* ─── Dashboard CSS Animations ─── */
+const dashboardStyles = `
+  @keyframes toastSlide {
+    from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+  @keyframes cardFlash {
+    0% { box-shadow: 0 0 0 0 rgba(212,175,55,0.4); }
+    50% { box-shadow: 0 0 32px 8px rgba(212,175,55,0.25); }
+    100% { box-shadow: 0 0 0 0 rgba(212,175,55,0); }
+  }
+  @keyframes statusPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
+  }
+  @keyframes dotPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.7; }
+  }
+  @keyframes regFadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`;
+
 /* ─── Registration Page ─── */
 const regRoot: React.CSSProperties = {
   minHeight: "100vh", display: "flex", flexDirection: "column",
-  backgroundColor: "#0B3C5D", color: "#FFFFFF",
+  backgroundColor: C.primary, color: "#FFFFFF",
   fontFamily: F.body, userSelect: "none",
   animation: "regFadeIn 0.6s ease-out",
 };
@@ -669,8 +898,8 @@ const regFormCard: React.CSSProperties = {
 const regInput: React.CSSProperties = {
   fontFamily: F.body, fontSize: "0.95rem",
   padding: "12px 16px", borderRadius: "8px",
-  border: "2px solid #E2E8F0", backgroundColor: "#F8FAFC",
-  color: "#0F172A", outline: "none", width: "100%",
+  border: `2px solid ${C.border}`, backgroundColor: C.bg,
+  color: C.text, outline: "none", width: "100%",
   transition: "border-color 0.2s ease",
   boxSizing: "border-box" as const,
 };
@@ -678,7 +907,7 @@ const regInput: React.CSSProperties = {
 const regBtn: React.CSSProperties = {
   fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
   padding: "14px 24px", borderRadius: "8px",
-  border: "none", backgroundColor: "#D4AF37", color: "#0B3C5D",
+  border: "none", backgroundColor: C.accent, color: C.primary,
   cursor: "pointer", width: "100%",
   marginTop: "8px", transition: "all 0.2s ease",
 };

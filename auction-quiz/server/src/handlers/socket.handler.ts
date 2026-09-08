@@ -31,6 +31,7 @@ const AUCTION_CONFIG = {
 
 export function setupSocketHandlers(io: Server) {
   const socketTeamMap = new Map<string, string>();
+  let currentTheme = "default"; // Server-stored theme state
 
   io.on("connection", (socket: Socket) => {
     const clientIp = socket.handshake.address;
@@ -46,6 +47,9 @@ export function setupSocketHandlers(io: Server) {
     }
 
     console.log(`[Socket] Client connected: ${socket.id} (ip: ${clientIp}, isAdmin: ${!!socket.data.isAdmin})`);
+
+    // Send current theme to new client immediately
+    socket.emit("theme:changed", { theme: currentTheme });
 
     socket.on("client:register", async (data, cb) => {
       try {
@@ -495,6 +499,23 @@ export function setupSocketHandlers(io: Server) {
         io.emit("sound:per_setting", { soundName, enabled });
         cb({ success: true });
         console.log(`[Sound] Per-sound setting: ${soundName}=${enabled}`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
+    socket.on("admin:theme", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const { theme } = data ?? {};
+        if (!theme || !["default", "bidforc"].includes(theme)) {
+          cb({ success: false, error: "Invalid theme" });
+          return;
+        }
+        currentTheme = theme; // Store in server memory
+        io.emit("theme:changed", { theme });
+        cb({ success: true });
+        console.log(`[Theme] Theme changed to: ${theme}`);
       } catch (err: any) {
         cb({ success: false, error: err.message || "Failed" });
       }

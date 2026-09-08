@@ -162,6 +162,10 @@ export interface ClientEvents {
     data: { soundName: string; enabled: boolean },
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
+  "admin:theme": (
+    data: { theme: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
 }
 
 // ---- Socket Events: Server -> Client ----
@@ -180,6 +184,7 @@ export interface ServerEvents {
   "task:paused": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "task:resumed": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "question:active": (data: QuestionPayload) => void;
+  "question:selected": (data: QuestionPayload) => void;
   "question:image_set": (data: { imagePath: string }) => void;
   "timer:update": (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => void;
   // Sound trigger events (frontend plays sounds on these)
@@ -192,6 +197,7 @@ export interface ServerEvents {
   "sound:task_result": (data: { result: "pass" | "fail" }) => void;
   "sound:settings": (data: { enabled: boolean; volume: number }) => void;
   "sound:per_setting": (data: { soundName: string; enabled: boolean }) => void;
+  "theme:changed": (data: { theme: string }) => void;
 }
 
 // A question made visible to everyone: selected (upcoming), active

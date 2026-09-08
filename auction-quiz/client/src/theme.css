@@ -1,0 +1,109 @@
+/**
+ * Theme CSS Variables
+ *
+ * Two themes only: default + bidforc
+ * Applied via data-theme attribute on :root
+ */
+
+/* Default Theme */
+:root,
+:root[data-theme="default"] {
+  /* Colors - Primary (Navy) */
+  --color-primary: #0B3C5D;
+  --color-primary-light: #1A5276;
+  --color-primary-dark: #082C44;
+
+  /* Colors - Accent (Gold) */
+  --color-accent: #D4AF37;
+  --color-accent-light: #E5C34B;
+  --color-accent-dark: #B8962E;
+
+  /* Colors - Background & Surface */
+  --color-bg: #F8FAFC;
+  --color-surface: #FFFFFF;
+
+  /* Colors - Text */
+  --color-text: #0F172A;
+  --color-text-secondary: #334155;
+  --color-muted: #64748B;
+
+  /* Colors - Borders */
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+
+  /* Colors - Status */
+  --color-success: #22C55E;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-danger: #EF4444;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-info: #3A7CA5;
+  --color-info-bg: #EFF6FF;
+  --color-info-border: #BFDBFE;
+
+  /* Colors - Difficulty */
+  --color-easy-bg: #DCFCE7;
+  --color-easy-fg: #166534;
+  --color-medium-bg: #FEF9C3;
+  --color-medium-fg: #854D0E;
+  --color-hard-bg: #FEE2E2;
+  --color-hard-fg: #991B1B;
+
+  /* Fonts */
+  --font-heading: 'Poppins', 'Inter', 'Segoe UI', sans-serif;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 24px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04);
+  --shadow-xl: 0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.06);
+}
+
+/* Bid for C Event Theme */
+:root[data-theme="bidforc"] {
+  /* Colors - Primary (Darker Navy) */
+  --color-primary: #0f172a;
+  --color-primary-light: #1e293b;
+  --color-primary-dark: #020617;
+
+  /* Colors - Accent (Brighter Gold) */
+  --color-accent: #facc15;
+  --color-accent-light: #fde047;
+  --color-accent-dark: #eab308;
+
+  /* Colors - Background */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+
+  /* Colors - Text */
+  --color-text: #0f172a;
+  --color-text-secondary: #334155;
+  --color-muted: #64748b;
+
+  /* Colors - Borders */
+  --color-border: #e2e8f0;
+  --color-border-light: #f1f5f9;
+
+  /* Colors - Status (Blue glow accent) */
+  --color-info: #3b82f6;
+  --color-info-bg: #eff6ff;
+  --color-info-border: #bfdbfe;
+
+  /* Shadows - Enhanced for premium feel */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 24px rgba(0,0,0,0.1), 0 4px 8px rgba(0,0,0,0.04);
+  --shadow-xl: 0 20px 40px rgba(0,0,0,0.12), 0 8px 16px rgba(0,0,0,0.06);
+}
+
+/* Smooth theme transitions */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}

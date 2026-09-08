@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useGamePhase } from "../hooks/useGamePhase";
 import { BrandHeader } from "../components/BrandHeader";
-import { tokens, badge as badgeStyle, card as cardStyle, tabular } from "../design-system";
+import { tokens } from "../design-system";
+import { listReorder } from "../utils/motion";
 
 const C = tokens.color;
 const F = tokens.font;
@@ -52,28 +54,63 @@ function Header({ connected }: { connected: boolean }) {
 }
 
 function RankBadge({ rank }: { rank: number }) {
-  const medals: Record<number, { bg: string; fg: string; glow: string }> = {
-    1: { bg: "#D4AF37", fg: "#FFFFFF", glow: "0 0 16px rgba(212,175,55,0.4)" },
-    2: { bg: "#94A3B8", fg: "#FFFFFF", glow: "0 0 12px rgba(148,163,184,0.3)" },
-    3: { bg: "#CD7F32", fg: "#FFFFFF", glow: "0 0 12px rgba(205,127,50,0.3)" },
+  const medals: Record<number, {
+    bg: string;
+    fg: string;
+    glow: string;
+    size: string;
+    fontSize: string;
+    icon?: string;
+  }> = {
+    1: {
+      bg: "linear-gradient(135deg, #F59E0B 0%, #D4AF37 50%, #B8860B 100%)",
+      fg: "#FFFFFF",
+      glow: "0 0 24px rgba(212,175,55,0.5), 0 0 48px rgba(212,175,55,0.2)",
+      size: "72px",
+      fontSize: "1.8rem",
+      icon: "👑",
+    },
+    2: {
+      bg: "linear-gradient(135deg, #E2E8F0 0%, #94A3B8 50%, #64748B 100%)",
+      fg: "#FFFFFF",
+      glow: "0 0 16px rgba(148,163,184,0.4)",
+      size: "64px",
+      fontSize: "1.5rem",
+    },
+    3: {
+      bg: "linear-gradient(135deg, #FED7AA 0%, #CD7F32 50%, #A0522D 100%)",
+      fg: "#FFFFFF",
+      glow: "0 0 16px rgba(205,127,50,0.4)",
+      size: "58px",
+      fontSize: "1.35rem",
+    },
   };
+
   const m = medals[rank];
+
   return (
     <div style={{
-      width: rank <= 3 ? "56px" : "44px",
-      height: rank <= 3 ? "56px" : "44px",
+      width: m?.size ?? "48px",
+      height: m?.size ?? "48px",
       borderRadius: "50%",
-      display: "flex", alignItems: "center", justifyContent: "center",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "column",
       backgroundColor: m?.bg ?? "transparent",
       color: m?.fg ?? C.muted,
       border: m ? "none" : `2px solid ${C.border}`,
       fontFamily: F.heading,
       fontWeight: 800,
-      fontSize: rank <= 3 ? "1.4rem" : "1.1rem",
+      fontSize: m?.fontSize ?? "1rem",
       boxShadow: m?.glow ?? "none",
       transition: `all ${tokens.transition.slow}`,
+      position: "relative",
     }}>
-      {rank}
+      {m?.icon && (
+        <span style={{ fontSize: "0.9rem", marginBottom: "-2px" }}>{m.icon}</span>
+      )}
+      <span>{rank}</span>
     </div>
   );
 }
@@ -92,40 +129,107 @@ function TeamRow({
   const rankChanged = prevRank > 0 && prevRank !== rank;
   const movedUp = prevRank > rank;
 
-  const podium: Record<number, { border: string; bg: string }> = {
-    1: { border: "#D4AF37", bg: "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)" },
-    2: { border: "#94A3B8", bg: "linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)" },
-    3: { border: "#CD7F32", bg: "linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%)" },
+  /* ─── Podium styling for top 3 ─── */
+  const podiumStyles: Record<number, {
+    border: string;
+    bg: string;
+    scale: number;
+    padding: string;
+    shadow: string;
+    nameSize: string;
+    pointsSize: string;
+    coinsSize: string;
+  }> = {
+    1: {
+      border: "transparent",
+      bg: "linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 30%, #FDE68A 100%)",
+      scale: 1.12,
+      padding: "24px 32px",
+      shadow: "0 8px 32px rgba(212,175,55,0.35), 0 0 0 3px #D4AF37, inset 0 1px 0 rgba(255,255,255,0.8)",
+      nameSize: "clamp(1.8rem, 3.5vw, 2.8rem)",
+      pointsSize: "clamp(2.2rem, 4vw, 3.4rem)",
+      coinsSize: "1.4rem",
+    },
+    2: {
+      border: "transparent",
+      bg: "linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 50%, #CBD5E1 100%)",
+      scale: 1.06,
+      padding: "20px 28px",
+      shadow: "0 6px 24px rgba(148,163,184,0.3), 0 0 0 2px #94A3B8, inset 0 1px 0 rgba(255,255,255,0.9)",
+      nameSize: "clamp(1.5rem, 2.8vw, 2.2rem)",
+      pointsSize: "clamp(1.8rem, 3.2vw, 2.8rem)",
+      coinsSize: "1.2rem",
+    },
+    3: {
+      border: "transparent",
+      bg: "linear-gradient(135deg, #FFF7ED 0%, #FED7AA 50%, #FDBA74 100%)",
+      scale: 1.02,
+      padding: "18px 28px",
+      shadow: "0 6px 20px rgba(205,127,50,0.25), 0 0 0 2px #CD7F32, inset 0 1px 0 rgba(255,255,255,0.7)",
+      nameSize: "clamp(1.3rem, 2.5vw, 1.9rem)",
+      pointsSize: "clamp(1.6rem, 2.8vw, 2.4rem)",
+      coinsSize: "1.1rem",
+    },
   };
-  const p = podium[rank];
+
+  const isTop3 = rank <= 3;
+  const podium = podiumStyles[rank];
+
+  /* ─── Default row style (rank 4+) ─── */
+  const defaultStyle = {
+    border: `2px solid ${C.border}`,
+    bg: rank % 2 === 0 ? C.surface : C.bg,
+    scale: 1,
+    padding: "16px 28px",
+    shadow: tokens.shadow.sm,
+    nameSize: "clamp(1.1rem, 2vw, 1.5rem)",
+    pointsSize: "clamp(1.2rem, 2vw, 1.6rem)",
+    coinsSize: "1rem",
+  };
+
+  const style = podium ?? defaultStyle;
 
   return (
-    <div
-      key={team.teamId}
+    <motion.div
+      layout
+      layoutId={team.teamId}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{
+        opacity: 1,
+        y: 0,
+        scale: style.scale,
+      }}
+      transition={listReorder}
       style={{
         display: "flex",
         alignItems: "center",
-        padding: rank <= 3 ? "18px 28px" : "14px 28px",
-        borderRadius: tokens.radius.lg,
-        border: `2px solid ${p?.border ?? C.border}`,
-        backgroundColor: p?.bg ?? C.surface,
-        boxShadow: rank <= 3 ? tokens.shadow.md : tokens.shadow.xs,
-        transition: `all 0.6s cubic-bezier(0.34,1.56,0.64,1)`,
-        animation: highlight ? "scoreFlash 0.8s ease" : "none",
+        padding: style.padding,
+        borderRadius: isTop3 ? tokens.radius.xl : tokens.radius.lg,
+        border: style.border,
+        backgroundColor: style.bg,
+        boxShadow: style.shadow,
+        transformOrigin: "center left",
+        ...(highlight ? { animation: "scoreFlash 0.8s ease" } : {}),
       }}
     >
-      {/* Rank */}
-      <div style={{ width: "64px", flexShrink: 0 }}>
+      {/* Rank Badge */}
+      <div style={{ width: isTop3 ? "72px" : "56px", flexShrink: 0 }}>
         <RankBadge rank={rank} />
       </div>
 
       {/* Rank change indicator */}
-      <div style={{ width: "40px", flexShrink: 0, textAlign: "center" }}>
+      <div style={{ width: "48px", flexShrink: 0, textAlign: "center" }}>
         {rankChanged && (
           <span style={{
-            fontFamily: F.body, fontSize: "0.9rem", fontWeight: 700,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "32px",
+            height: "32px",
+            borderRadius: "50%",
+            backgroundColor: movedUp ? `${C.success}20` : `${C.danger}20`,
+            fontFamily: F.body, fontSize: "1rem", fontWeight: 800,
             color: movedUp ? C.success : C.danger,
-            opacity: 0.8,
           }}>
             {movedUp ? "▲" : "▼"}
           </span>
@@ -134,45 +238,53 @@ function TeamRow({
 
       {/* Team name */}
       <div style={{
-        flex: 1, fontFamily: F.heading,
-        fontWeight: 700,
-        fontSize: rank <= 3 ? "clamp(1.4rem, 2.5vw, 2rem)" : "clamp(1.1rem, 2vw, 1.5rem)",
-        color: rank <= 3 ? C.text : C.textSecondary,
-        paddingLeft: "8px",
+        flex: 1,
+        fontFamily: F.heading,
+        fontWeight: isTop3 ? 800 : 700,
+        fontSize: style.nameSize,
+        color: isTop3 ? C.text : C.textSecondary,
+        paddingLeft: "12px",
+        lineHeight: 1.2,
       }}>
         {team.teamName}
       </div>
 
       {/* Reward points */}
       <div style={{
-        width: "120px", textAlign: "right",
-        fontFamily: F.heading, fontWeight: 800,
-        fontSize: rank <= 3 ? "clamp(1.6rem, 3vw, 2.4rem)" : "clamp(1.2rem, 2vw, 1.6rem)",
-        color: rank <= 3 ? C.accent : C.primary,
+        width: "140px",
+        textAlign: "right",
+        fontFamily: F.heading,
+        fontWeight: 800,
+        fontSize: style.pointsSize,
+        color: isTop3 ? C.accent : C.primary,
         fontVariantNumeric: "tabular-nums",
+        lineHeight: 1,
       }}>
         {team.reward_points}
         <span style={{
-          fontFamily: F.body, fontSize: "0.65rem", fontWeight: 600,
-          color: C.muted, marginLeft: "4px", letterSpacing: "0.1em",
+          fontFamily: F.body, fontSize: "0.6rem", fontWeight: 600,
+          color: C.muted, marginLeft: "6px", letterSpacing: "0.12em",
+          verticalAlign: "super",
         }}>PTS</span>
       </div>
 
       {/* Bid coins */}
       <div style={{
-        width: "110px", textAlign: "right",
-        fontFamily: F.heading, fontWeight: 700,
-        fontSize: rank <= 3 ? "1.2rem" : "1rem",
+        width: "120px",
+        textAlign: "right",
+        fontFamily: F.heading,
+        fontWeight: 700,
+        fontSize: style.coinsSize,
         color: C.muted,
         fontVariantNumeric: "tabular-nums",
       }}>
         {team.bid_coins}
         <span style={{
-          fontFamily: F.body, fontSize: "0.6rem", fontWeight: 600,
+          fontFamily: F.body, fontSize: "0.55rem", fontWeight: 600,
           color: C.muted, marginLeft: "4px", letterSpacing: "0.1em",
         }}>COINS</span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -231,10 +343,16 @@ export default function ScoreboardScreen() {
     const handleBid = () => refresh();
     const handleEnded = () => refresh();
     const handleScores = () => refresh();
+    const handleThemeChanged = (data: { theme: string }) => {
+      document.documentElement.setAttribute("data-theme", data.theme);
+      localStorage.setItem("theme", data.theme);
+    };
+
     socket.on("auction:bid_update", handleBid);
     socket.on("auction:ended", handleEnded);
     socket.on("task:result", handleScores);
     socket.on("scoreboard:updated", handleScores);
+    socket.on("theme:changed", handleThemeChanged);
 
     return () => {
       cancelled = true;
@@ -243,6 +361,7 @@ export default function ScoreboardScreen() {
       socket.off("auction:ended", handleEnded);
       socket.off("task:result", handleScores);
       socket.off("scoreboard:updated", handleScores);
+      socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected, handleRefresh]);
 
@@ -255,12 +374,26 @@ export default function ScoreboardScreen() {
       <style>{`
         @keyframes scoreFlash {
           0% { box-shadow: 0 0 0 0 rgba(212,175,55,0.4); }
-          50% { box-shadow: 0 0 24px 4px rgba(212,175,55,0.2); }
+          50% { box-shadow: 0 0 32px 8px rgba(212,175,55,0.3); }
           100% { box-shadow: 0 0 0 0 rgba(212,175,55,0); }
         }
+        @keyframes rankUp {
+          0% { transform: scale(1) translateY(8px); opacity: 0.7; }
+          50% { transform: scale(1.03) translateY(-4px); }
+          100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        @keyframes rankDown {
+          0% { transform: scale(1) translateY(-8px); opacity: 0.7; }
+          50% { transform: scale(0.98) translateY(4px); }
+          100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
         @keyframes fadeSlideUp {
-          from { opacity: 0; transform: translateY(20px); }
+          from { opacity: 0; transform: translateY(24px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes podiumShine {
+          0% { background-position: -200% center; }
+          100% { background-position: 200% center; }
         }
       `}</style>
 
@@ -279,31 +412,35 @@ export default function ScoreboardScreen() {
             }}>Teams will appear here once they register</div>
           </div>
         ) : (
-          <div style={{
-            display: "flex", flexDirection: "column", gap: "10px",
-            width: "100%", maxWidth: "960px",
-          }}>
-            {/* Column labels */}
+          <LayoutGroup>
             <div style={{
-              display: "flex", alignItems: "center",
-              padding: "0 28px 0 132px",
-              marginBottom: "4px",
+              display: "flex", flexDirection: "column", gap: "12px",
+              width: "100%", maxWidth: "1000px",
             }}>
-              <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
-              <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>POINTS</div>
-              <div style={{ width: "110px", textAlign: "right", ...labelStyle }}>COINS</div>
-            </div>
+              {/* Column labels */}
+              <div style={{
+                display: "flex", alignItems: "center",
+                padding: "0 32px 0 140px",
+                marginBottom: "8px",
+              }}>
+                <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
+                <div style={{ width: "140px", textAlign: "right", ...labelStyle }}>POINTS</div>
+                <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>COINS</div>
+              </div>
 
-            {sorted.map((t, i) => (
-              <TeamRow
-                key={t.teamId}
-                team={t}
-                rank={i + 1}
-                prevRank={prevRanks[t.teamId] ?? 0}
-                highlight={flashIds.has(t.teamId)}
-              />
-            ))}
-          </div>
+              <AnimatePresence mode="popLayout">
+                {sorted.map((t, i) => (
+                  <TeamRow
+                    key={t.teamId}
+                    team={t}
+                    rank={i + 1}
+                    prevRank={prevRanks[t.teamId] ?? 0}
+                    highlight={flashIds.has(t.teamId)}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </LayoutGroup>
         )}
       </div>
     </div>

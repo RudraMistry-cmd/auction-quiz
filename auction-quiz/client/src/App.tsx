@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useState } from "react";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import TeamScreen from "./pages/TeamScreen";
 import AdminScreen from "./pages/AdminScreen";
 import DisplayScreen from "./pages/DisplayScreen";
@@ -25,9 +26,10 @@ function App() {
   };
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
         <Route
           path="/team"
           element={<TeamScreen sessionToken={sessionToken} onLogout={handleLogout} />}
@@ -41,6 +43,7 @@ function App() {
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

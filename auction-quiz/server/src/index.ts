@@ -10,6 +10,7 @@ import { auctionService } from "./services/auction.service";
 import { taskService } from "./services/task.service";
 import { questionService } from "./services/question.service";
 import { manualTimerService } from "./services/manual-timer.service";
+import { teamService } from "./services/team.service";
 import { ADMIN_SECRET, ALLOW_REMOTE_ADMIN, isLocalOrHostIp } from "./auth";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -31,7 +32,7 @@ async function main() {
   const app = express();
   const httpServer = createServer(app);
 
-  app.use(cors({ origin: "*", methods: ["GET", "POST"] }));
+  app.use(cors({ origin: "*", methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
   app.use(express.json());
 
   // Serve question images from /questions folder
@@ -145,6 +146,46 @@ async function main() {
       fs.writeFileSync(filePath, req.body);
       console.log(`[Sound] Uploaded: ${soundName}.mp3 (${req.body.length} bytes)`);
       res.json({ success: true, name: soundName, path: `/sounds/${soundName}.mp3` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── Admin: Team Data Management ───
+
+  // GET /admin/teams - Fetch all teams
+  app.get("/admin/teams", adminHttpAuth, async (_req, res) => {
+    try {
+      const teams = await teamService.getAllTeams();
+      res.json({ success: true, teams });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // PATCH /admin/team/:id - Update team fields
+  app.patch("/admin/team/:id", adminHttpAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { bid_coins, reward_points, email, phone } = req.body ?? {};
+
+      const result = await teamService.updateTeam(id, {
+        bid_coins,
+        reward_points,
+        email,
+        phone,
+      });
+
+      if ("error" in result) {
+        res.status(400).json({ success: false, error: result.error });
+        return;
+      }
+
+      // Sync updated coins/points with all connected screens
+      const scoreboard = await teamService.getScoreboard();
+      io.emit("scoreboard:updated", { teams: scoreboard });
+
+      res.json({ success: true, team: result.team });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

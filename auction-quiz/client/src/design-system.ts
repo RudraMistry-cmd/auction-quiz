@@ -5,52 +5,55 @@
  *   import { ds, button, card, badge, table } from "../design-system";
  *   <div style={card()}> ... </div>
  *   <button style={button("primary")}>Submit</button>
+ *
+ * Colors use CSS variables for runtime theme switching.
+ * Theme is applied via data-theme attribute on :root.
  */
 
 import type { CSSProperties } from "react";
 
 /* ═══════════════════════════════════════════════════
-   Design Tokens
+   Design Tokens (CSS Variables for runtime theming)
    ═══════════════════════════════════════════════════ */
 
 export const tokens = {
   color: {
-    primary: "#0B3C5D",
-    primaryLight: "#1A5276",
-    primaryDark: "#082C44",
-    accent: "#D4AF37",
-    accentLight: "#E5C34B",
-    accentDark: "#B8962E",
-    bg: "#F8FAFC",
-    surface: "#FFFFFF",
-    text: "#0F172A",
-    textSecondary: "#334155",
-    muted: "#64748B",
-    border: "#E2E8F0",
-    borderLight: "#F1F5F9",
-    success: "#22C55E",
-    successBg: "#F0FDF4",
-    successBorder: "#BBF7D0",
-    warning: "#F59E0B",
-    warningBg: "#FFFBEB",
-    warningBorder: "#FDE68A",
-    danger: "#EF4444",
-    dangerBg: "#FEF2F2",
-    dangerBorder: "#FECACA",
-    info: "#3A7CA5",
-    infoBg: "#EFF6FF",
-    infoBorder: "#BFDBFE",
-    easyBg: "#DCFCE7",
-    easyFg: "#166534",
-    mediumBg: "#FEF9C3",
-    mediumFg: "#854D0E",
-    hardBg: "#FEE2E2",
-    hardFg: "#991B1B",
+    primary: "var(--color-primary)",
+    primaryLight: "var(--color-primary-light)",
+    primaryDark: "var(--color-primary-dark)",
+    accent: "var(--color-accent)",
+    accentLight: "var(--color-accent-light)",
+    accentDark: "var(--color-accent-dark)",
+    bg: "var(--color-bg)",
+    surface: "var(--color-surface)",
+    text: "var(--color-text)",
+    textSecondary: "var(--color-text-secondary)",
+    muted: "var(--color-muted)",
+    border: "var(--color-border)",
+    borderLight: "var(--color-border-light)",
+    success: "var(--color-success)",
+    successBg: "var(--color-success-bg)",
+    successBorder: "var(--color-success-border)",
+    warning: "var(--color-warning)",
+    warningBg: "var(--color-warning-bg)",
+    warningBorder: "var(--color-warning-border)",
+    danger: "var(--color-danger)",
+    dangerBg: "var(--color-danger-bg)",
+    dangerBorder: "var(--color-danger-border)",
+    info: "var(--color-info)",
+    infoBg: "var(--color-info-bg)",
+    infoBorder: "var(--color-info-border)",
+    easyBg: "var(--color-easy-bg)",
+    easyFg: "var(--color-easy-fg)",
+    mediumBg: "var(--color-medium-bg)",
+    mediumFg: "var(--color-medium-fg)",
+    hardBg: "var(--color-hard-bg)",
+    hardFg: "var(--color-hard-fg)",
   },
   font: {
-    heading: "'Poppins', 'Inter', 'Segoe UI', sans-serif",
-    body: "'Inter', 'Segoe UI', sans-serif",
-    mono: "'JetBrains Mono', 'Fira Code', monospace",
+    heading: "var(--font-heading)",
+    body: "var(--font-body)",
+    mono: "var(--font-mono)",
   },
   space: {
     0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 20,
