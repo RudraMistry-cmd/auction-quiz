@@ -81,6 +81,13 @@ export interface TimestampTimer {
   label?: string;
 }
 
+export interface ManualTimerState {
+  duration: number;
+  endAt: number | null;
+  isRunning: boolean;
+  timeLeft: number;
+}
+
 export interface GameState {
   phase: GamePhase;
   currentQuestion: QuestionManifestItem | null;
@@ -166,7 +173,7 @@ export interface ClientEvents {
     cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
   ) => void;
   "admin:timer_start": (
-    data: Record<string, never>,
+    data: { duration?: number } | Record<string, never>,
     cb: (res: { success: boolean; duration?: number; endAt?: number | null; isRunning?: boolean; timeLeft?: number; error?: string }) => void
   ) => void;
   "admin:timer_pause": (
@@ -286,6 +293,7 @@ export interface ServerEvents {
   "question:selected": (data: QuestionPayload) => void;
   "question:preview": (data: RenderedQuestion & { questionId?: string }) => void;
   "question:image_set": (data: { imagePath: string; question?: QuestionManifestItem }) => void;
+  "manual_timer:update": (data: ManualTimerState) => void;
   "timer:update": (data: {
     biddingTimer?: TimestampTimer | null;
     mainTaskTimer?: TimestampTimer | null;

@@ -387,9 +387,10 @@ export default function LiveAuctionScreen() {
     };
 
     const handleManualTimer = (data: any) => {
-      if (data.isRunning !== undefined && data.timeLeft !== undefined) {
-        setManualTimer({ isRunning: data.isRunning, timeLeft: data.timeLeft });
-      }
+      setManualTimer({
+        isRunning: data.isRunning ?? false,
+        timeLeft: data.isRunning ? (data.timeLeft ?? 0) : 0,
+      });
     };
 
     const handleImageSet = (data: { imagePath: string }) => {
@@ -414,7 +415,7 @@ export default function LiveAuctionScreen() {
     socket.on("auction:timer", handleTimer);
     socket.on("auction:ended", handleEnded);
     socket.on("auction:cleared", handleCleared);
-    socket.on("timer:update", handleManualTimer);
+    socket.on("manual_timer:update", handleManualTimer);
     socket.on("question:image_set", handleImageSet);
     socket.on("sound:settings", handleSoundSettings);
     socket.on("sound:per_setting", handleSoundPerSetting);
@@ -426,7 +427,7 @@ export default function LiveAuctionScreen() {
       socket.off("auction:timer", handleTimer);
       socket.off("auction:ended", handleEnded);
       socket.off("auction:cleared", handleCleared);
-      socket.off("timer:update", handleManualTimer);
+      socket.off("manual_timer:update", handleManualTimer);
       socket.off("question:image_set", handleImageSet);
       socket.off("sound:settings", handleSoundSettings);
       socket.off("sound:per_setting", handleSoundPerSetting);
@@ -494,7 +495,7 @@ export default function LiveAuctionScreen() {
   } else if (isMainTask) {
     centralTimeLeft = mainTaskTimer ? mainTaskTimer.remaining : taskTimer;
     showCentralTimer = true;
-  } else if (manualTimer.isRunning || manualTimer.timeLeft > 0) {
+  } else if (manualTimer.isRunning) {
     centralTimeLeft = manualTimer.timeLeft;
     showCentralTimer = true;
   }

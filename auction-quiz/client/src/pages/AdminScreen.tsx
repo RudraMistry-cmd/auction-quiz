@@ -241,14 +241,12 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     const handleScores = () => fetchScoreboard();
 
     const handleTimerUpdate = (data: any) => {
-      if (data.timeLeft !== undefined) {
-        setTimerState({
-          duration: data.duration ?? 0,
-          endAt: data.endAt ?? null,
-          isRunning: data.isRunning ?? false,
-          timeLeft: data.timeLeft ?? 0,
-        });
-      }
+      setTimerState({
+        duration: data.duration ?? 0,
+        endAt: data.endAt ?? null,
+        isRunning: data.isRunning ?? false,
+        timeLeft: data.isRunning ? (data.timeLeft ?? 0) : 0,
+      });
     };
 
     socket.on("auction:started", handleStarted);
@@ -257,7 +255,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     socket.on("auction:ended", handleEnded);
     socket.on("task:result", handleScores);
     socket.on("scoreboard:updated", handleScores);
-    socket.on("timer:update", handleTimerUpdate);
+    socket.on("manual_timer:update", handleTimerUpdate);
 
     const handleThemeChanged = (data: { theme: string }) => {
       document.documentElement.setAttribute("data-theme", data.theme);
@@ -272,7 +270,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       socket.off("auction:ended", handleEnded);
       socket.off("task:result", handleScores);
       socket.off("scoreboard:updated", handleScores);
-      socket.off("timer:update", handleTimerUpdate);
+      socket.off("manual_timer:update", handleTimerUpdate);
       socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected]);
@@ -514,8 +512,14 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   };
 
   const timerSetDuration = () => manualTimerAction("admin:timer_set_duration", { duration: timerDuration });
-  const timerStart = () => manualTimerAction("admin:timer_start", {});
-  const timerPause = () => manualTimerAction("admin:timer_pause", {});
+  const timerStart = () => {
+    if (timerState.isRunning) return;
+    manualTimerAction("admin:timer_start", { duration: timerDuration > 0 ? timerDuration : (timerState.duration > 0 ? timerState.duration : 60) });
+  };
+  const timerPause = () => {
+    if (!timerState.isRunning) return;
+    manualTimerAction("admin:timer_pause", {});
+  };
   const timerReset = () => manualTimerAction("admin:timer_reset", {});
   const timerAdd30 = () => manualTimerAction("admin:timer_adjust", { seconds: 30 });
 
@@ -638,9 +642,9 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Admin-controlled countdown (independent of auction/task timers).</p>
           <div style={styles.timerPreview}>
             <span style={{ ...styles.timerPreviewValue, color: timerState.isRunning ? (timerState.timeLeft <= 10 ? C.danger : timerState.timeLeft <= 30 ? C.accent : C.success) : C.muted }}>
-              {formatClock(timerState.timeLeft)}
+              {formatClock(timerState.isRunning ? timerState.timeLeft : 0)}
             </span>
-            <span style={styles.timerPreviewLabel}>{timerState.isRunning ? "Running" : timerState.timeLeft > 0 ? "Paused" : "Stopped"}</span>
+            <span style={styles.timerPreviewLabel}>{timerState.isRunning ? "Running" : "Stopped"}</span>
           </div>
           <div style={styles.timerInputRow}>
             <label style={styles.timerInputLabel}>Duration (s)</label>
@@ -649,12 +653,12 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           <div style={styles.timerBtnRow}>
             <button onClick={timerSetDuration} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>Set</button>
             {!timerState.isRunning ? (
-              <button onClick={timerStart} disabled={timerBusy || timerState.timeLeft <= 0} style={{ ...styles.timerCtrlBtn, backgroundColor: C.success }}>Start</button>
+              <button onClick={timerStart} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.success }}>Start</button>
             ) : (
               <button onClick={timerPause} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.accent }}>Pause</button>
             )}
             <button onClick={timerReset} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.danger }}>Reset</button>
-            <button onClick={timerAdd30} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>+30s</button>
+            <button onClick={timerAdd30} disabled={timerBusy || !timerState.isRunning} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>+30s</button>
           </div>
         </Card>
 

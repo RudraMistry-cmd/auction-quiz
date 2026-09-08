@@ -55,7 +55,7 @@ export default function DisplayScreen() {
       .then((r) => r.json())
       .then((s: any) => {
         if (cancelled) return;
-        setManualTimer({ timeLeft: s.timeLeft ?? 0, isRunning: s.isRunning ?? false, duration: s.duration ?? 0 });
+        setManualTimer({ timeLeft: s.isRunning ? (s.timeLeft ?? 0) : 0, isRunning: s.isRunning ?? false, duration: s.duration ?? 0 });
       })
       .catch(() => {});
 
@@ -124,9 +124,9 @@ export default function DisplayScreen() {
     socket.on("auction:cleared", handleCleared);
 
     const handleManualTimer = (data: any) => {
-      setManualTimer({ timeLeft: data.timeLeft ?? 0, isRunning: data.isRunning ?? false, duration: data.duration ?? 0 });
+      setManualTimer({ timeLeft: data.isRunning ? (data.timeLeft ?? 0) : 0, isRunning: data.isRunning ?? false, duration: data.duration ?? 0 });
     };
-    socket.on("timer:update", handleManualTimer);
+    socket.on("manual_timer:update", handleManualTimer);
 
     return () => {
       socket.off("auction:started", handleStarted);
@@ -134,7 +134,7 @@ export default function DisplayScreen() {
       socket.off("auction:timer", handleTimer);
       socket.off("auction:ended", handleEnded);
       socket.off("auction:cleared", handleCleared);
-      socket.off("timer:update", handleManualTimer);
+      socket.off("manual_timer:update", handleManualTimer);
     };
   }, [socket, connected]);
 
@@ -175,11 +175,11 @@ export default function DisplayScreen() {
         <TaskStage task={task} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} />
       ) : (
       <>
-      {!winner && (manualTimer.isRunning || manualTimer.timeLeft > 0) && (
+      {!winner && manualTimer.isRunning && (
         <div style={styles.waiting}>
             <div style={styles.manualTimerSection}>
               <div style={styles.manualTimerLabel}>
-                {manualTimer.isRunning ? "TIME REMAINING" : "TIMER PAUSED"}
+                TIME REMAINING
               </div>
               <div style={{
                 ...styles.manualTimerValue,
@@ -192,7 +192,7 @@ export default function DisplayScreen() {
             </div>
         </div>
       )}
-      {!winner && !(manualTimer.isRunning || manualTimer.timeLeft > 0) && !auction && (
+      {!winner && !manualTimer.isRunning && !auction && (
         <div style={styles.waiting}>
           <div style={styles.waitingIcon}>Auction</div>
           <div style={styles.waitingText}>{auctionCleared ? "No active auction" : "Waiting to start..."}</div>

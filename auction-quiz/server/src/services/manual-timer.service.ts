@@ -1,10 +1,9 @@
 /**
  * Manual timer — server-authoritative countdown.
- * Ticks every second, broadcasts via callback (socket handler wires io.emit).
+ * Independent admin-controlled timer.
+ * Ticks every second, broadcasts via dedicated callback ("manual_timer:update").
  * 
  * SINGLE SOURCE OF TRUTH: endAt (timestamp when timer expires)
- * - duration: the original duration set by user (used for resume after pause)
- * - endAt: the actual expiry timestamp (used for all time calculations)
  */
 
 export interface ManualTimerState {
@@ -31,7 +30,7 @@ class ManualTimerService {
   }
 
   private computeTimeLeft(): number {
-    if (!this.isRunning || !this.endAt) return Math.max(0, this.duration);
+    if (!this.isRunning || !this.endAt) return 0;
     return Math.max(0, Math.ceil((this.endAt - Date.now()) / 1000));
   }
 
@@ -42,45 +41,68 @@ class ManualTimerService {
 
   setDuration(seconds: number): ManualTimerState {
     this.duration = Math.max(0, Math.round(seconds));
-    if (!this.isRunning) this.endAt = null;
+    if (!this.isRunning) {
+      this.endAt = null;
+    }
     return this.getState();
   }
 
-  start(): ManualTimerState {
-    if (this.isRunning) return this.getState();
-    if (this.duration <= 0) return this.getState();
+  start(seconds?: number): ManualTimerState {
+    // If already running -> ignore
+    if (this.isRunning) {
+      return this.getState();
+    }
+    const dur = seconds && seconds > 0 ? Math.round(seconds) : this.duration;
+    if (dur <= 0) {
+      return this.getState();
+    }
+    this.duration = dur;
     this.endAt = Date.now() + this.duration * 1000;
     this.isRunning = true;
+    console.log("Manual Timer Started");
     this.startTicking();
+    return this.getState();
+  }
+
+  stop(): ManualTimerState {
+    const wasRunning = this.isRunning;
+    this.duration = 0;
+    this.endAt = null;
+    this.isRunning = false;
+    this.stopTicking();
+    if (wasRunning) {
+      console.log("Manual Timer Stopped");
+    }
     return this.getState();
   }
 
   pause(): ManualTimerState {
     if (!this.isRunning) return this.getState();
-    // Save the current time left as duration for resume
-    this.duration = this.computeTimeLeft();
+    this.duration = Math.max(0, Math.ceil(((this.endAt ?? 0) - Date.now()) / 1000));
     this.endAt = null;
     this.isRunning = false;
     this.stopTicking();
+    console.log("Manual Timer Stopped");
     return this.getState();
   }
 
   reset(): ManualTimerState {
+    const wasRunning = this.isRunning;
     this.duration = 0;
     this.endAt = null;
     this.isRunning = false;
     this.stopTicking();
+    if (wasRunning) {
+      console.log("Manual Timer Stopped");
+    }
     return this.getState();
   }
 
   adjust(seconds: number): ManualTimerState {
     if (this.isRunning && this.endAt) {
-      // SINGLE SOURCE OF TRUTH: modify endAt directly
       this.endAt += seconds * 1000;
-      // Update duration to reflect new time left (for display purposes)
       this.duration = Math.max(0, Math.ceil((this.endAt - Date.now()) / 1000));
     } else {
-      // Timer is paused or not started: modify duration directly
       this.duration = Math.max(0, this.duration + seconds);
     }
     return this.getState();
@@ -89,12 +111,15 @@ class ManualTimerService {
   private startTicking() {
     this.stopTicking();
     this.tickInterval = setInterval(() => {
-      const state = this.getState();
-      if (state.timeLeft <= 0) {
+      const left = this.computeTimeLeft();
+      if (left <= 0) {
         this.isRunning = false;
         this.endAt = null;
         this.duration = 0;
         this.stopTicking();
+        console.log("Manual Timer Stopped");
+        this.onTick?.(this.getState());
+        return;
       }
       this.onTick?.(this.getState());
     }, 1000);

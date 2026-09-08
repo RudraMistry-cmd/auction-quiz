@@ -34,6 +34,11 @@ export function setupSocketHandlers(io: Server) {
   const socketTeamMap = new Map<string, string>();
   let currentTheme = "default"; // Server-stored theme state
 
+  const resetManualTimer = () => {
+    const s = manualTimerService.reset();
+    io.emit("manual_timer:update", s);
+  };
+
   io.on("connection", (socket: Socket) => {
     const clientIp = socket.handshake.address;
     const isHost = isLocalOrHostIp(clientIp);
@@ -53,6 +58,7 @@ export function setupSocketHandlers(io: Server) {
     socket.emit("theme:changed", { theme: currentTheme });
     socket.emit("phase:changed", stateManager.getGameState());
     socket.emit("timer:update", timerEngineService.getTimers() as any);
+    socket.emit("manual_timer:update", manualTimerService.getState());
 
     socket.on("client:register", async (data, cb) => {
       try {
@@ -427,7 +433,7 @@ export function setupSocketHandlers(io: Server) {
       try {
         const s = Math.max(0, Math.round(data?.duration ?? 0));
         const state = manualTimerService.setDuration(s);
-        io.emit("timer:update", state);
+        io.emit("manual_timer:update", state);
         cb({ success: true, ...state });
         console.log(`[Timer] Duration set: ${s}s`);
       } catch (err: any) {
@@ -438,8 +444,12 @@ export function setupSocketHandlers(io: Server) {
     socket.on("admin:timer_start", async (data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
-        const state = manualTimerService.start();
-        io.emit("timer:update", state);
+        if (manualTimerService.getState().isRunning) {
+          return cb({ success: true, ...manualTimerService.getState() });
+        }
+        const dur = typeof data?.duration === "number" && data.duration > 0 ? data.duration : undefined;
+        const state = manualTimerService.start(dur);
+        io.emit("manual_timer:update", state);
         io.emit("sound:timer_started");
         cb({ success: true, ...state });
         console.log(`[Timer] Started (${state.timeLeft}s left)`);
@@ -452,7 +462,7 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         const state = manualTimerService.pause();
-        io.emit("timer:update", state);
+        io.emit("manual_timer:update", state);
         io.emit("sound:timer_stopped");
         cb({ success: true, ...state });
         console.log(`[Timer] Paused (${state.timeLeft}s left)`);
@@ -465,10 +475,23 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         const state = manualTimerService.reset();
-        io.emit("timer:update", state);
+        io.emit("manual_timer:update", state);
         io.emit("sound:timer_stopped");
         cb({ success: true, ...state });
         console.log(`[Timer] Reset`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
+    socket.on("admin:timer_stop", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const state = manualTimerService.stop();
+        io.emit("manual_timer:update", state);
+        io.emit("sound:timer_stopped");
+        cb({ success: true, ...state });
+        console.log(`[Timer] Stopped`);
       } catch (err: any) {
         cb({ success: false, error: err.message || "Failed" });
       }
@@ -480,7 +503,7 @@ export function setupSocketHandlers(io: Server) {
         const s = Math.round(data?.seconds ?? 0);
         if (s === 0) { cb({ success: false, error: "Non-zero seconds required" }); return; }
         const state = manualTimerService.adjust(s);
-        io.emit("timer:update", state);
+        io.emit("manual_timer:update", state);
         cb({ success: true, ...state });
         console.log(`[Timer] Adjusted ${s > 0 ? "+" : ""}${s}s → ${state.timeLeft}s left`);
       } catch (err: any) {
@@ -585,6 +608,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on("admin:pass_task", async (_data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
+        resetManualTimer();
         const r = await taskService.passWinningTask();
         const scoreboard = await teamService.getScoreboard();
         io.emit("task:result", {
@@ -609,6 +633,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on("admin:fail_task", async (_data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
+        resetManualTimer();
         await taskService.failWinningTask();
         io.emit("sound:task_result", { result: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
@@ -622,6 +647,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on("admin:end_failed_task", async (_data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
+        resetManualTimer();
         await taskService.endFailedTaskNormally();
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
@@ -638,6 +664,7 @@ export function setupSocketHandlers(io: Server) {
           cb({ success: false, error: "Missing teamId" });
           return;
         }
+        resetManualTimer();
         const r = await taskService.assignFallbackTeam(data.teamId);
         const scoreboard = await teamService.getScoreboard();
         io.emit("task:result", {
@@ -766,6 +793,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on("admin:end_round", async (_data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
+        resetManualTimer();
         stateManager.resetRound();
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
@@ -784,17 +812,12 @@ export function setupSocketHandlers(io: Server) {
 
   // Wire manual timer to broadcast every second
   manualTimerService.startBroadcasting((state) => {
-    io.emit("timer:update", state);
+    io.emit("manual_timer:update", state);
   });
 
   // Wire singleton timerEngineService to broadcast every second
   timerEngineService.setTickCallback((timers) => {
-    io.emit("timer:update", {
-      ...timers,
-      duration: timers.sideTaskTimer?.duration ?? timers.mainTaskTimer?.duration ?? 0,
-      timeLeft: timers.sideTaskTimer?.remaining ?? timers.mainTaskTimer?.remaining ?? 0,
-      isRunning: timers.sideTaskTimer?.isRunning ?? timers.mainTaskTimer?.isRunning ?? false,
-    });
+    io.emit("timer:update", timers);
   });
 
   // (Re)starts the authoritative per-second task ticks. Safe to call
@@ -821,6 +844,8 @@ export function setupSocketHandlers(io: Server) {
         throw new Error("No question selected. Please select a question before starting auction.");
       }
 
+      resetManualTimer();
+
       const auction = await auctionService.startAuction({ ...AUCTION_CONFIG, ...opts });
       io.emit("auction:started", auction);
       io.emit("sound:auction_started");
@@ -831,6 +856,7 @@ export function setupSocketHandlers(io: Server) {
       // Start 60s bidding timer via singleton timerEngineService
       timerEngineService.startBidding(60, async () => {
         try {
+          resetManualTimer();
           const result = await auctionService.endAuction();
           if (!result) return;
 
