@@ -539,8 +539,8 @@ export default function LiveAuctionScreen() {
         <BrandHeader variant="live" />
       </div>
 
-      {/* Timer - Top Center (visible during bidding, task, or side_task) */}
-      {showCentralTimer && displayState !== "result" && displayState !== "ended" && (
+      {/* Timer - Top Center (visible during bidding or manual timer; during task, TaskDisplay contains the timer) */}
+      {showCentralTimer && displayState !== "task" && displayState !== "result" && displayState !== "ended" && (
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
           <TimerDisplay timeLeft={centralTimeLeft} size="large" />
         </div>
