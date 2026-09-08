@@ -108,47 +108,53 @@ export class AuctionService {
   }
 
   async startAuction(config: {
-    startBid: number;
-    increment: number;
-    duration: number;
-  }): Promise<Auction> {
+    startBid?: number;
+    increment?: number;
+    duration?: number;
+  } = {}): Promise<Auction> {
     return this.withLock(async () => {
       if (this.activeAuction) {
         throw new Error("An auction is already active");
       }
 
-      const auctionId = uuidv4();
-      // State machine: auctions may only start from idle (never mid-task).
-      stateManager.beginAuction(auctionId);
+      const curQ = stateManager.getCurrentQuestion();
+      if (!curQ) {
+        throw new Error("No question selected. Please select a question before starting the auction.");
+      }
 
-      // Images are now set separately via admin:set_question_image
-      const selected = await questionService.takeSelection();
+      const startBid = config.startBid ?? 100;
+      const increment = config.increment ?? 20;
+      const duration = config.duration ?? 60;
+
+      const auctionId = uuidv4();
+      // State machine: auctions may only start from idle or ended.
+      stateManager.beginAuction(auctionId);
 
       const db = await getDb();
       this.seqCounter++;
 
-      const endAt = Date.now() + config.duration * 1000;
+      const endAt = Date.now() + duration * 1000;
 
       run(db, `
         INSERT INTO auctions (auctionId, seqNo, startBid, increment, duration, status, endAt, question, defaultReward, questionId, time_limit)
         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
-      `, [auctionId, this.seqCounter, config.startBid, config.increment, config.duration, endAt,
-          "", 1, "", 300]);
+      `, [auctionId, this.seqCounter, startBid, increment, duration, endAt,
+          curQ.image, curQ.reward, curQ.id, curQ.time]);
       persistDb();
 
       this.activeAuction = {
         auctionId,
         seqNo: this.seqCounter,
-        startBid: config.startBid,
-        increment: config.increment,
-        duration: config.duration,
+        startBid,
+        increment,
+        duration,
         status: "active",
         endAt,
         winnerId: null,
-        question: "",
-        defaultReward: 1,
-        questionId: "",
-        time_limit: 300,
+        question: curQ.image,
+        defaultReward: curQ.reward,
+        questionId: curQ.id,
+        time_limit: curQ.time,
         created_at: new Date().toISOString(),
       };
 
@@ -173,7 +179,7 @@ export class AuctionService {
     if (!ALLOWED_INCREMENTS.includes(increment)) {
       return { success: false, error: `Invalid increment. Must be ${ALLOWED_INCREMENTS.join(" or ")}.` };
     }
-    if (stateManager.getPhase() !== "auction") {
+    if (stateManager.getPhase() !== "bidding") {
       return { success: false, error: "No live auction right now" };
     }
     if (!this.activeAuction || this.activeAuction.auctionId !== auctionId) {
@@ -234,6 +240,7 @@ export class AuctionService {
     persistDb();
 
     this.lastBidTime.set(teamId, Date.now());
+    stateManager.setCurrentBid(nextBid);
 
     const bid: Bid = {
       bidId,

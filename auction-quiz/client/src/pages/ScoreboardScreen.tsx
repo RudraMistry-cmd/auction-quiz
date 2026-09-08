@@ -25,12 +25,7 @@ function Header({ connected }: { connected: boolean }) {
       display: "flex", alignItems: "center", justifyContent: "space-between",
       marginBottom: "clamp(24px, 4vw, 48px)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        <span style={{
-          fontFamily: F.body, fontSize: "0.8rem", fontWeight: 700,
-          color: C.muted, letterSpacing: "0.15em", textTransform: "uppercase",
-        }}>Auction Quiz</span>
-      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: "60px" }} />
 
       <div style={{ display: "flex", justifyContent: "center", flex: 1 }}>
         <BrandHeader variant="scoreboard" />

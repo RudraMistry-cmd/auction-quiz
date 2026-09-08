@@ -1,0 +1,23 @@
+[
+  {
+    "id": "q1",
+    "image": "1.jpg",
+    "reward": 100,
+    "time": 180,
+    "used": true
+  },
+  {
+    "id": "q2",
+    "image": "2.jpg",
+    "reward": 150,
+    "time": 240,
+    "used": false
+  },
+  {
+    "id": "q3",
+    "image": "3.jpg",
+    "reward": 200,
+    "time": 300,
+    "used": true
+  }
+]

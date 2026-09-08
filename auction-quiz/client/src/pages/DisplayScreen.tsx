@@ -96,7 +96,7 @@ export default function DisplayScreen() {
       setTimer(data.remaining);
     };
 
-    const handleEnded = (data: { auctionId: string; winner: any; winningBid: number | null }) => {
+    const handleEnded = (data: { auctionId?: string; winner: any; winningBid: number | null }) => {
       setAuction((a) => (a ? { ...a, status: "completed" } : null));
       if (data.winner && data.winningBid) {
         setWinner({ teamName: data.winner.teamName, bid: data.winningBid });
@@ -123,8 +123,8 @@ export default function DisplayScreen() {
     socket.on("auction:ended", handleEnded);
     socket.on("auction:cleared", handleCleared);
 
-    const handleManualTimer = (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => {
-      setManualTimer({ timeLeft: data.timeLeft, isRunning: data.isRunning, duration: data.duration });
+    const handleManualTimer = (data: any) => {
+      setManualTimer({ timeLeft: data.timeLeft ?? 0, isRunning: data.isRunning ?? false, duration: data.duration ?? 0 });
     };
     socket.on("timer:update", handleManualTimer);
 
@@ -157,7 +157,7 @@ export default function DisplayScreen() {
   return (
     <div style={styles.container}>
       <div style={styles.topBar}>
-        <span style={styles.brand}>Auction Quiz</span>
+        <span style={styles.brand}></span>
         <span>{auction ? `Auction #${auction.seqNo}` : "Standby"}</span>
         <span style={styles.liveBadge}>
           <span
@@ -171,7 +171,7 @@ export default function DisplayScreen() {
       </div>
 
       <div style={styles.stage}>
-      {phase === "task" && task ? (
+      {(phase === "main_task" || (phase as any) === "task") && task ? (
         <TaskStage task={task} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} />
       ) : (
       <>

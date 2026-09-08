@@ -169,7 +169,20 @@ function FeedbackToast({ message }: { message: { type: "success" | "error"; text
 
 /* ─── Main Screen ─── */
 export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) {
-  const { socket, connected, phase, task, taskTimer, taskEnded, taskPaused } = useGamePhase();
+  const {
+    socket,
+    connected,
+    phase,
+    currentQuestion,
+    winningTeam,
+    mainTaskTimer,
+    sideTaskTimer,
+    explicitTimer,
+    task,
+    taskTimer,
+    taskEnded,
+    taskPaused,
+  } = useGamePhase();
   const [team, setTeam] = useState<Team | null>(null);
   const [auction, setAuction] = useState<Auction | null>(null);
   const [currentBid, setCurrentBid] = useState<number>(0);
@@ -305,17 +318,17 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
       setAuction(null); setCurrentBid(0); setTimer(0);
       setLeadingTeam(""); setBidMessage(null); setAuctionCleared(true);
     };
-    const handleBidUpdate = (data: { auctionId: string; bid: Bid; teamName: string; increment: number }) => {
+    const handleBidUpdate = (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => {
       setCurrentBid(data.bid.amount); setLeadingTeam(data.teamName);
       if (data.bid.teamId === teamRef.current?.teamId) {
-        setBidMessage({ type: "success", text: `Bid ${data.bid.amount} (+${data.increment})` });
+        setBidMessage({ type: "success", text: `Bid ${data.bid.amount} (+${data.increment ?? 0})` });
       } else {
         setBidMessage({ type: "error", text: `${data.teamName} → ${data.bid.amount}` });
       }
       setTimeout(() => setBidMessage(null), 3000);
     };
     const handleTimer = (data: { auctionId: string; remaining: number }) => { setTimer(data.remaining); };
-    const handleEnded = (data: { auctionId: string; winner: Team | null; winningBid: number | null }) => {
+    const handleEnded = (data: { auctionId?: string; winner: any; winningBid: number | null }) => {
       setAuction((a) => (a ? { ...a, status: "completed" } : null));
       if (data.winner) {
         const isWinner = data.winner.teamId === teamRef.current?.teamId;
@@ -560,9 +573,15 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
 
   const isActive = auction?.status === "active" && timer > 0;
 
-  /* ── Task Phase ── */
-  if (phase === "task" && task) {
-    const isWinner = task.teamId === team.teamId;
+  /* ── Main Task Phase ── */
+  if ((phase === "main_task" || (phase as any) === "task") && (task || winningTeam)) {
+    const winnerId = winningTeam?.teamId || task?.teamId;
+    const winnerName = winningTeam?.teamName || task?.teamName || "Winning Team";
+    const isWinner = winnerId === team.teamId;
+    const displayTimer = (mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0;
+    const activeExplicit = explicitTimer || sideTaskTimer;
+    const isFailed = task?.result === "fail";
+
     return (
       <div style={dashRoot}>
         <style>{dashboardStyles}</style>
@@ -588,18 +607,81 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
 
         {/* Status */}
         <StatusBanner
-          status={isWinner ? "YOUR TASK — SOLVE NOW" : `${task.teamName} is solving`}
-          color={isWinner ? C.accent : C.muted}
+          status={
+            isFailed
+              ? (isWinner ? "TASK FAILED — WAITING FOR RESOLUTION" : "PRIMARY SOLVER FAILED")
+              : (isWinner ? "YOUR TASK — SOLVE NOW" : `${winnerName} is solving`)
+          }
+          color={isFailed ? C.danger : isWinner ? C.accent : C.muted}
         />
 
         {/* Task Timer */}
-        <div style={{ marginTop: "24px" }}>
-          <TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} size="medium" />
+        {!isFailed && (
+          <div style={{ marginTop: "24px" }}>
+            {task ? (
+              <TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={displayTimer} ended={taskEnded} paused={taskPaused} size="medium" />
+            ) : (
+              <TimerDisplay timeLeft={displayTimer} isUrgent={displayTimer <= 30} />
+            )}
+          </div>
+        )}
+
+        {/* Secondary Explicit Timer ("Open Challenge") if active */}
+        {activeExplicit && activeExplicit.remaining > 0 && (
+          <div style={{
+            marginTop: "20px", padding: "16px 24px", borderRadius: tokens.radius.lg,
+            backgroundColor: `${C.accent}15`, border: `2px solid ${C.accent}`,
+            display: "flex", flexDirection: "column", alignItems: "center", gap: "6px",
+          }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 800, color: C.accent, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              {activeExplicit.label || "Open Challenge"}
+            </span>
+            <span style={{ fontFamily: F.heading, fontWeight: 900, fontSize: "2.2rem", color: "#FFFFFF" }}>
+              {formatClock(activeExplicit.remaining)}
+            </span>
+            <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
+              {isWinner ? "Open challenge running for other teams" : "Solve offline now — report solution to Admin!"}
+            </span>
+          </div>
+        )}
+
+        <div style={{ fontFamily: F.body, fontSize: "0.9rem", color: C.muted, marginTop: "16px", textAlign: "center" }}>
+          Reward: {currentQuestion?.reward ?? task?.defaultReward ?? 100} pts
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Ended Phase ── */
+  if (phase === "ended") {
+    return (
+      <div style={dashRoot}>
+        <style>{dashboardStyles}</style>
+        <FeedbackToast message={bidMessage} />
+
+        {/* Team Header */}
+        <div style={dashHeader}>
+          <div style={dashTeamName}>{team.teamName}</div>
+          <button onClick={onLogout} style={btnGhost}>Logout</button>
         </div>
 
-        <div style={{ fontFamily: F.body, fontSize: "0.9rem", color: C.muted, marginTop: "12px" }}>
-          Final bid: {task.finalBid} coins
+        {/* Stat Cards */}
+        <div style={dashStatRow}>
+          <DashboardCard
+            label="COINS" value={coins} color={C.accent} flash={coinFlash}
+            icon={<CoinIcon />} size="large"
+          />
+          <DashboardCard
+            label="POINTS" value={points} color={C.success} flash={pointsFlash}
+            icon={<PointsIcon />} size="large"
+          />
         </div>
+
+        {/* Status */}
+        <StatusBanner
+          status="ROUND COMPLETED — WAITING FOR NEXT AUCTION"
+          color={C.info}
+        />
       </div>
     );
   }

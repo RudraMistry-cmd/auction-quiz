@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { getServerBase } from "../hooks/useSocket";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
-import TaskTimer from "../components/TaskTimer";
 import { BrandHeader } from "../components/BrandHeader";
 import { tokens, tabular } from "../design-system";
 import type { Auction, Bid } from "../shared/types";
@@ -49,7 +48,20 @@ interface AdminScreenProps {
 
 export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const secret = adminSecret || import.meta.env.VITE_ADMIN_SECRET || "7f8a9b2c";
-  const { socket, connected, phase, task, taskTimer, taskEnded, taskPaused } = useGamePhase();
+  const {
+    socket,
+    connected,
+    phase,
+    currentQuestion: phaseQuestion,
+    currentBid: phaseBid,
+    winningTeam: phaseWinner,
+    biddingTimer,
+    mainTaskTimer,
+    sideTaskTimer,
+    explicitTimer,
+    task,
+    taskTimer,
+  } = useGamePhase();
   const [isAdminVerified, setIsAdminVerified] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [auction, setAuction] = useState<Auction | null>(null);
@@ -58,7 +70,15 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [timer, setTimer] = useState<number>(0);
   const [scoreboard, setScoreboard] = useState<ScoreboardTeam[]>([]);
   const [lastEvent, setLastEvent] = useState<string>("");
-  const [rewardInput, setRewardInput] = useState("1");
+  const [startArmed, setStartArmed] = useState(false);
+
+  // Manifest & Fallback state
+  const [manifest, setManifest] = useState<any[]>([]);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [fallbackTeamId, setFallbackTeamId] = useState<string>("");
+  const [fallbackBusy, setFallbackBusy] = useState(false);
+  const [endRoundBusy, setEndRoundBusy] = useState(false);
+  const [taskFailedLocally, setTaskFailedLocally] = useState(false);
 
   // Team management state
   const [teamEdits, setTeamEdits] = useState<Record<string, { bid_coins?: number; reward_points?: number }>>({});
@@ -74,12 +94,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     timeLeft: number;
   }>({ duration: 0, endAt: null, isRunning: false, timeLeft: 0 });
   const [timerBusy, setTimerBusy] = useState(false);
-
-  // Image picker state
-  const [images, setImages] = useState<{ name: string; path: string; folder: string; used?: boolean }[]>([]);
-  const [selectedImagePath, setSelectedImagePath] = useState<string | null>(null);
-  const [imageBusy, setImageBusy] = useState(false);
-  const [currentImageSet, setCurrentImageSet] = useState<string | null>(null);
 
   // Sound control state
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -100,12 +114,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [dataConfirm, setDataConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
   const [dataToast, setDataToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Pre-fill PASS reward from the round's default — editing stays optional.
-  useEffect(() => {
-    if (task) {
-      setRewardInput(String(task.defaultReward ?? 1));
-    }
-  }, [task?.taskId]);
   const [failArmed, setFailArmed] = useState(false);
   const [taskPending, setTaskPending] = useState(false);
 
@@ -117,14 +125,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     });
   };
 
-  const fetchImages = () => {
-    if (!socket || !connected) return;
-    socket.emit("admin:get_images", (res: any) => {
-      if (res.success && res.images) {
-        setImages(res.images);
-      }
-    });
-  };
+
 
   const fetchSounds = async () => {
     try {
@@ -165,21 +166,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     }
   };
 
-  const setImage = (imagePath: string) => {
-    if (!socket || imageBusy) return;
-    setImageBusy(true);
-    socket.emit("admin:set_question_image", { imagePath }, (res: any) => {
-      setImageBusy(false);
-      if (res.success) {
-        setCurrentImageSet(res.imagePath);
-        setSelectedImagePath(null);
-        setLastEvent(`Question image set: ${res.imagePath}`);
-      } else {
-        setLastEvent(`Error: ${res.error || "failed to set image"}`);
-      }
-    });
-  };
-
   useEffect(() => {
     sessionStorage.setItem("isAdmin", "true");
     sessionStorage.setItem("adminSecret", secret);
@@ -194,7 +180,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         setIsAdminVerified(true);
         setAuthError(null);
         fetchScoreboard();
-        fetchImages();
         fetchSounds();
       } else {
         setIsAdminVerified(false);
@@ -215,6 +200,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       })
       .catch(() => {});
     const interval = setInterval(fetchScoreboard, 5000);
+    fetchManifest();
     return () => clearInterval(interval);
   }, [socket, connected, secret]);
 
@@ -242,23 +228,27 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       setTimer(data.remaining);
     };
 
-    const handleEnded = (data: { auctionId: string; winner: any; winningBid: number | null }) => {
+    const handleEnded = (data: { auctionId?: string; winner: any; winningBid: number | null }) => {
       setAuction((a) => (a ? { ...a, status: "completed" } : null));
       const winnerText = data.winner
         ? `${data.winner.teamName} won with ${data.winningBid}`
         : "No bids placed";
       setLastEvent(`Auction ended: ${winnerText}`);
       fetchScoreboard();
+      fetchManifest();
     };
 
     const handleScores = () => fetchScoreboard();
 
-    const handleTimerUpdate = (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => {
-      setTimerState(data);
-    };
-
-    const handleImageSet = (data: { imagePath: string }) => {
-      setCurrentImageSet(data.imagePath);
+    const handleTimerUpdate = (data: any) => {
+      if (data.timeLeft !== undefined) {
+        setTimerState({
+          duration: data.duration ?? 0,
+          endAt: data.endAt ?? null,
+          isRunning: data.isRunning ?? false,
+          timeLeft: data.timeLeft ?? 0,
+        });
+      }
     };
 
     socket.on("auction:started", handleStarted);
@@ -268,7 +258,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     socket.on("task:result", handleScores);
     socket.on("scoreboard:updated", handleScores);
     socket.on("timer:update", handleTimerUpdate);
-    socket.on("question:image_set", handleImageSet);
 
     const handleThemeChanged = (data: { theme: string }) => {
       document.documentElement.setAttribute("data-theme", data.theme);
@@ -284,94 +273,156 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       socket.off("task:result", handleScores);
       socket.off("scoreboard:updated", handleScores);
       socket.off("timer:update", handleTimerUpdate);
-      socket.off("question:image_set", handleImageSet);
       socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected]);
 
-  const [startArmed, setStartArmed] = useState(false);
+  const fetchManifest = () => {
+    if (!socket) return;
+    socket.emit("admin:get_manifest", {}, (res: any) => {
+      if (res.success && res.questions) {
+        setManifest(res.questions);
+        if (res.currentQuestion) {
+          setSelectedQuestionId(res.currentQuestion.id);
+        }
+      }
+    });
+  };
+
+  const selectQuestion = (qId: string) => {
+    setSelectedQuestionId(qId);
+    socket?.emit("admin:select_question", { questionId: qId }, (res) => {
+      if (res.success && res.question) {
+        setLastEvent(`Selected Question: ${res.question.id} (${res.question.reward} pts, ${res.question.time}s)`);
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to select question"}`);
+      }
+    });
+  };
 
   const startAuction = async () => {
     try {
       setStartArmed(false);
-      const res = await fetch(`${getServerBase()}/api/auction/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-secret": secret,
-        },
-      });
-      const data = await res.json();
-      if (!data.success) {
-        setLastEvent(`Error: ${data.error || "Failed to start auction"}`);
+      const q = phaseQuestion || manifest.find((m) => m.id === selectedQuestionId);
+      if (!q) {
+        setLastEvent("Error: Please select a question from Question Bank before starting auction.");
+        return;
       }
+      socket?.emit("admin:start_auction", {}, (res) => {
+        if (res.success) {
+          setLastEvent("Auction started successfully");
+        } else {
+          setLastEvent(`Error: ${res.error || "Failed to start auction"}`);
+        }
+      });
     } catch (err: any) {
       setLastEvent(`Error: ${err.message}`);
     }
   };
 
-  const submitPass = () => {
-    if (!socket || !task || taskPending) return;
-    const pts = parseInt(rewardInput, 10);
-    if (!Number.isInteger(pts) || pts < 0) {
-      setLastEvent("Enter a reward of 0 or more");
-      return;
-    }
+  const passTask = () => {
+    if (!socket || taskPending) return;
     setTaskPending(true);
-    socket.emit(
-      "admin:submit_result",
-      { taskId: task.taskId, result: "pass", rewardPoints: pts },
-      (res: any) => {
-        setTaskPending(false);
-        if (res.success) {
-          setFailArmed(false);
-          setLastEvent(`PASS recorded: ${task.teamName} +${pts} pts`);
-        } else {
-          setLastEvent(`Error: ${res.error || "failed to record"}`);
-        }
-      }
-    );
-  };
-
-  const submitFail = () => {
-    if (!socket || !task || taskPending) return;
-    setTaskPending(true);
-    socket.emit("admin:submit_result", { taskId: task.taskId, result: "fail" }, (res: any) => {
+    socket.emit("admin:pass_task", {}, (res) => {
       setTaskPending(false);
       if (res.success) {
-        setFailArmed(false);
-        setLastEvent(`FAIL recorded: ${task.teamName}`);
+        setLastEvent("Task PASS recorded! Reward points awarded.");
+        fetchScoreboard();
       } else {
-        setLastEvent(`Error: ${res.error || "failed to record"}`);
+        setLastEvent(`Error: ${res.error || "Failed to pass task"}`);
       }
     });
   };
 
-  const timerAction = (
-    event: "admin:task_pause" | "admin:task_resume" | "admin:task_adjust" | "admin:task_start",
-    data: any,
-    okText: (res: any) => string
-  ) => {
-    if (!socket || !task || taskPending) return;
+  const failTask = () => {
+    if (!socket || taskPending) return;
     setTaskPending(true);
-    socket.emit(event, data, (res: any) => {
+    setFailArmed(false);
+    socket.emit("admin:fail_task", {}, (res) => {
       setTaskPending(false);
-      setLastEvent(res.success ? okText(res) : `Error: ${res.error || "timer action failed"}`);
+      if (res.success) {
+        setTaskFailedLocally(true);
+        setLastEvent("Task FAIL recorded! Winner gets 0 pts. Choose Option A (End) or Option B (Fallback).");
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to fail task"}`);
+      }
     });
   };
 
-  const pauseTimer = () =>
-    timerAction("admin:task_pause", { taskId: task!.taskId }, (r) => `Timer paused (${r.timeLeft}s left)`);
-  const resumeTimer = () =>
-    timerAction("admin:task_resume", { taskId: task!.taskId }, (r) => `Timer resumed (${r.timeLeft}s left)`);
-  const addThirty = () =>
-    timerAction(
-      "admin:task_adjust",
-      { taskId: task!.taskId, seconds: 30 },
-      (r) => (r.revived ? `Timer revived (+30s)` : `+30s (${r.timeLeft}s left)`)
-    );
-  const startTimer = () =>
-    timerAction("admin:task_start", { taskId: task!.taskId }, (r) => `Timer started (${formatClock(r.timeLeft)})`);
+  const endFailedTask = () => {
+    if (!socket || endRoundBusy) return;
+    setEndRoundBusy(true);
+    socket.emit("admin:end_failed_task", {}, (res) => {
+      setEndRoundBusy(false);
+      if (res.success) {
+        setLastEvent("Task ended normally (No Winner).");
+        setTaskFailedLocally(false);
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to end task"}`);
+      }
+    });
+  };
+
+  const assignFallback = () => {
+    if (!socket || !fallbackTeamId || fallbackBusy) return;
+    setFallbackBusy(true);
+    socket.emit("admin:assign_fallback", { teamId: fallbackTeamId }, (res) => {
+      setFallbackBusy(false);
+      if (res.success) {
+        setLastEvent("Fallback team assigned successfully! Points awarded.");
+        setFallbackTeamId("");
+        setTaskFailedLocally(false);
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to assign fallback"}`);
+      }
+    });
+  };
+
+  const endRound = () => {
+    if (!socket || endRoundBusy) return;
+    setEndRoundBusy(true);
+    socket.emit("admin:end_round", {}, (res) => {
+      setEndRoundBusy(false);
+      if (res.success) {
+        setLastEvent("Round ended. Reset to idle for next auction.");
+        setSelectedQuestionId(null);
+        setTaskFailedLocally(false);
+        fetchManifest();
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to end round"}`);
+      }
+    });
+  };
+
+  const explicitTimerStart = (duration: number = 60) => {
+    socket?.emit("admin:explicit_timer_start", { duration }, (res) => {
+      if (res.success) setLastEvent(`Open Challenge timer started (${duration}s)`);
+    });
+  };
+
+  const explicitTimerPause = () => {
+    socket?.emit("admin:explicit_timer_pause", {}, (res) => {
+      if (res.success) setLastEvent("Open Challenge timer paused");
+    });
+  };
+
+  const explicitTimerAdd30 = () => {
+    socket?.emit("admin:explicit_timer_adjust", { seconds: 30 }, (res) => {
+      if (res.success) setLastEvent("Open Challenge timer +30s");
+    });
+  };
+
+  const explicitTimerStop = () => {
+    socket?.emit("admin:explicit_timer_stop", {}, (res) => {
+      if (res.success) setLastEvent("Open Challenge timer stopped");
+    });
+  };
+
+
 
   const applyTeamUpdate = (teamId: string) => {
     if (!socket || teamBusy) return;
@@ -506,24 +557,73 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       <div style={gridStyle}>
         {/* Row 1: Auction Control (8) + Manual Timer (4) */}
         <Card title="Auction Control" span={8}>
-          <div style={styles.authStatusBadge}>
-            <span style={{ ...styles.authStatusDot, backgroundColor: isAdminVerified ? C.success : C.danger }} />
-            <span>{isAdminVerified ? "Host Verified Session" : "Authenticating session..."}</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+            <div style={styles.authStatusBadge}>
+              <span style={{ ...styles.authStatusDot, backgroundColor: isAdminVerified ? C.success : C.danger }} />
+              <span>{isAdminVerified ? "Host Verified Session" : "Authenticating session..."}</span>
+            </div>
+            <span style={{
+              fontSize: "0.8rem", fontWeight: 800, padding: "4px 12px", borderRadius: "12px",
+              backgroundColor: phase === "bidding" ? `${C.accent}20` : phase === "main_task" ? `${C.primary}20` : `${C.muted}20`,
+              color: phase === "bidding" ? C.accent : phase === "main_task" ? C.primary : C.muted,
+              textTransform: "uppercase", letterSpacing: "0.05em",
+            }}>
+              Phase: {phase}
+            </span>
           </div>
+
+          {/* Question selection status */}
+          <div style={{
+            padding: "10px 14px", borderRadius: "8px", marginBottom: "16px",
+            backgroundColor: (phaseQuestion || selectedQuestionId) ? `${C.success}10` : `${C.danger}10`,
+            border: `1px solid ${(phaseQuestion || selectedQuestionId) ? C.success : C.danger}`,
+            fontSize: "0.85rem",
+          }}>
+            {(phaseQuestion || selectedQuestionId) ? (
+              <span style={{ color: C.success, fontWeight: 700 }}>
+                ✓ Selected Question: {phaseQuestion?.id || selectedQuestionId}
+                {phaseQuestion && ` · Reward: ${phaseQuestion.reward} pts · Time: ${phaseQuestion.time}s`}
+              </span>
+            ) : (
+              <span style={{ color: C.danger, fontWeight: 700 }}>
+                ⚠️ No question selected. Please pick a question from Question Bank below before starting auction.
+              </span>
+            )}
+          </div>
+
           {!startArmed ? (
-            <button onClick={() => setStartArmed(true)} disabled={isActive} style={{ ...styles.startBtn, opacity: isActive ? 0.5 : 1, cursor: isActive ? "not-allowed" : "pointer" }}>
-              {isActive ? "Auction in Progress" : "Start Auction"}
-            </button>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => setStartArmed(true)}
+                disabled={isActive || (!phaseQuestion && !selectedQuestionId)}
+                style={{
+                  ...styles.startBtn, flex: 1,
+                  opacity: (isActive || (!phaseQuestion && !selectedQuestionId)) ? 0.5 : 1,
+                  cursor: (isActive || (!phaseQuestion && !selectedQuestionId)) ? "not-allowed" : "pointer",
+                }}
+              >
+                {isActive ? "Auction in Progress" : "Start Auction (60s Timer)"}
+              </button>
+              {phase === "ended" && (
+                <button
+                  onClick={endRound}
+                  disabled={endRoundBusy}
+                  style={{ ...styles.cancelBtn, padding: "10px 20px" }}
+                >
+                  End Round & Reset
+                </button>
+              )}
+            </div>
           ) : (
             <div style={styles.confirmRow}>
-              <span style={styles.confirmText}>Start auction?</span>
+              <span style={styles.confirmText}>Start 60s bidding for question {phaseQuestion?.id || selectedQuestionId}?</span>
               <button onClick={startAuction} disabled={isActive} style={styles.startBtn}>Confirm Start</button>
               <button onClick={() => setStartArmed(false)} disabled={isActive} style={styles.cancelBtn}>Cancel</button>
             </div>
           )}
           {auction && (
             <div style={styles.auctionInfo}>
-              <div style={styles.timerLarge}>{timer}</div>
+              <div style={styles.timerLarge}>{biddingTimer ? biddingTimer.remaining : timer}</div>
               <div style={styles.bidSection}>
                 <span style={styles.bidLabel}>Current Bid</span>
                 <span style={styles.bidValue}>{currentBid}</span>
@@ -558,67 +658,60 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           </div>
         </Card>
 
-        <Card title="Image Bank" span={8} scroll>
-          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Select an image from the questions folder to display on the projector.</p>
-          {images.length === 0 ? (
-            <div style={styles.empty}>No images found in /questions folder</div>
+        <Card title="Question Bank & Manifest" span={8} scroll>
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>
+            Select a question to auction. Reward points and time limit are automatically loaded from manifest.
+          </p>
+          {manifest.length === 0 ? (
+            <div style={styles.empty}>No questions in manifest.json</div>
           ) : (
-            <>
-              <div style={styles.imageGrid}>
-                {images.map((img) => (
+            <div style={styles.imageGrid}>
+              {manifest.map((q) => {
+                const isSelected = selectedQuestionId === q.id || phaseQuestion?.id === q.id;
+                return (
                   <div
-                    key={img.path}
-                    onClick={() => setSelectedImagePath(img.path)}
+                    key={q.id}
+                    onClick={() => selectQuestion(q.id)}
                     style={{
                       ...styles.imageGridItem,
-                      borderColor: selectedImagePath === img.path ? C.accent : currentImageSet === img.path ? C.success : img.used ? `${C.accent}88` : C.border,
-                      backgroundColor: selectedImagePath === img.path ? `${C.accent}15` : img.used ? `${C.accent}08` : C.bg,
+                      borderColor: isSelected ? C.success : q.used ? `${C.accent}88` : C.border,
+                      backgroundColor: isSelected ? `${C.success}15` : q.used ? `${C.accent}08` : C.bg,
                       cursor: "pointer",
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      padding: "8px", position: "relative",
                     }}
                   >
                     <img
-                      src={`${getServerBase()}/questions/${img.path}`}
-                      alt={img.name}
-                      style={styles.imageGridThumb}
+                      src={`${getServerBase()}/questions/${q.image}`}
+                      alt={q.id}
+                      style={{ ...styles.imageGridThumb, maxHeight: "80px", objectFit: "contain" }}
                       loading="lazy"
                     />
-                    <div style={styles.imageGridName}>{img.name}</div>
-                    {img.used && (
+                    <div style={{ fontWeight: 800, fontSize: "0.9rem", color: C.text, marginTop: "6px" }}>
+                      {q.id.toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: C.accent, fontWeight: 700 }}>
+                      {q.reward} pts · {q.time}s
+                    </div>
+                    {isSelected && (
                       <div style={{
-                        fontSize: "0.6rem",
-                        fontWeight: 700,
-                        color: C.accent,
-                        backgroundColor: `${C.accent}20`,
-                        padding: "2px 6px",
-                        borderRadius: "4px",
-                        marginTop: "2px",
-                      }}>USED</div>
+                        fontSize: "0.65rem", fontWeight: 800, color: "#fff",
+                        backgroundColor: C.success, padding: "2px 8px", borderRadius: "4px", marginTop: "4px",
+                      }}>
+                        SELECTED
+                      </div>
+                    )}
+                    {q.used && !isSelected && (
+                      <div style={{
+                        fontSize: "0.65rem", fontWeight: 700, color: C.accent,
+                        backgroundColor: `${C.accent}20`, padding: "2px 6px", borderRadius: "4px", marginTop: "4px",
+                      }}>
+                        USED
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
-              {selectedImagePath && (
-                <div style={styles.imagePreviewPanel}>
-                  <div style={styles.imagePreviewLabel}>Preview</div>
-                  <img
-                    src={`${getServerBase()}/questions/${selectedImagePath}`}
-                    alt="Preview"
-                    style={styles.imagePreviewImg}
-                  />
-                  <button
-                    onClick={() => setImage(selectedImagePath)}
-                    disabled={imageBusy}
-                    style={{ ...styles.setImageBtn, opacity: imageBusy ? 0.5 : 1, cursor: imageBusy ? "not-allowed" : "pointer" }}
-                  >
-                    {imageBusy ? "Setting..." : "Set as Question"}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          {currentImageSet && (
-            <div style={styles.currentImageNote}>
-              Active: {currentImageSet}
+                );
+              })}
             </div>
           )}
         </Card>
@@ -986,33 +1079,266 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         </Card>
 
         {/* Row 3: Task Control (6) + Scoreboard (6) */}
-        <Card title="Task Control" span={6}>
-          {phase === "task" && task ? (
-            <div style={styles.taskInfo}>
-              <div style={styles.taskTeam}>{task.teamName}</div>
-              {task.question && <div style={styles.taskQuestion}>{task.question}</div>}
-              <div style={styles.taskMeta}>Final bid: {task.finalBid} · Default reward: {task.defaultReward ?? 1} pts</div>
-              <div style={{ margin: "16px 0" }}><TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} size="small" /></div>
-              {taskEnded && <div style={styles.timeUpNote}>Time Up — verdict still allowed</div>}
-              <div style={styles.timerRow}>
-                {!taskPaused ? <button onClick={pauseTimer} disabled={taskPending || taskEnded} style={{ ...styles.timerBtn, opacity: taskPending || taskEnded ? 0.5 : 1 }}>Pause</button> : <button onClick={resumeTimer} disabled={taskPending} style={{ ...styles.timerBtn, opacity: taskPending ? 0.5 : 1 }}>Resume</button>}
-                <button onClick={addThirty} disabled={taskPending} style={{ ...styles.timerBtn, opacity: taskPending ? 0.5 : 1 }}>+30s</button>
-                <button onClick={startTimer} disabled={taskPending} style={{ ...styles.timerBtn, opacity: taskPending ? 0.5 : 1 }}>Start {formatClock(task.time_limit || 300)}</button>
+        <Card title="Task Control & Resolution" span={6}>
+          {phase === "main_task" || ((phase as any) === "task" && task) ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  {phaseWinner?.teamName || task?.teamName || "Winning Team"}
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: "rgba(235, 94, 40, 0.15)", color: C.accent, border: `1px solid ${C.accent}` }}>
+                  MAIN TASK ACTIVE
+                </span>
               </div>
-              {taskPaused && <div style={styles.pausedNote}>Timer paused</div>}
-              <div style={styles.rewardRow}>
-                <input style={styles.rewardInput} type="number" min={0} max={10000} value={rewardInput} onChange={(e) => setRewardInput(e.target.value)} disabled={taskPending} aria-label="Reward points" />
-                <button onClick={submitPass} disabled={taskPending} style={{ ...styles.passBtn, opacity: taskPending ? 0.5 : 1 }}>PASS</button>
+
+              {phaseQuestion && (
+                <div style={{ fontSize: "0.875rem", color: C.muted, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                  <span>Question: <strong>{phaseQuestion.id}</strong></span>
+                  <span>Reward: <strong>{phaseQuestion.reward} pts</strong></span>
+                  <span>Time Limit: <strong>{phaseQuestion.time}s</strong></span>
+                </div>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem", borderRadius: "0.75rem", backgroundColor: C.bg, border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.25rem" }}>
+                  Main Task Timer
+                </div>
+                <div style={{ ...styles.taskTimer, color: ((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0) <= 30 ? C.danger : C.primary }}>
+                  {formatClock((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0)}
+                </div>
+                {(((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0) <= 0) && (
+                  <div style={{ ...styles.timeUpNote, marginTop: "0.5rem" }}>Time Up — Verdict Allowed</div>
+                )}
               </div>
-              {!failArmed ? <button onClick={() => setFailArmed(true)} disabled={taskPending} style={{ ...styles.failBtn, opacity: taskPending ? 0.5 : 1 }}>FAIL</button> : (
-                <div style={styles.confirmRow}>
-                  <span style={styles.confirmText}>Record FAIL for {task.teamName}? No points awarded ({task.finalBid} coins were already paid at auction end).</span>
-                  <button onClick={submitFail} disabled={taskPending} style={styles.failBtn}>Confirm FAIL</button>
-                  <button onClick={() => setFailArmed(false)} disabled={taskPending} style={styles.cancelBtn}>Cancel</button>
+
+              {/* Optional Explicit Timer Controls (usable anytime without phase change) */}
+              <div style={{
+                padding: "0.85rem", borderRadius: "0.5rem",
+                backgroundColor: C.bg, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.5rem",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Open Challenge Timer (Optional)
+                  </span>
+                  {(explicitTimer || sideTaskTimer) && (explicitTimer || sideTaskTimer)!.remaining > 0 && (
+                    <span style={{ fontSize: "0.85rem", fontWeight: 800, color: C.accent }}>
+                      {formatClock((explicitTimer || sideTaskTimer)!.remaining)} ({(explicitTimer || sideTaskTimer)!.isRunning ? "Running" : "Paused"})
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <button onClick={() => explicitTimerStart(60)} style={{ ...styles.timerBtn, flex: 1 }}>Start 60s</button>
+                  <button onClick={explicitTimerPause} style={{ ...styles.timerBtn, flex: 1 }}>Pause</button>
+                  <button onClick={explicitTimerAdd30} style={{ ...styles.timerBtn, flex: 1 }}>+30s</button>
+                  <button onClick={explicitTimerStop} style={{ ...styles.timerBtn, flex: 1, backgroundColor: `${C.danger}30`, borderColor: C.danger, color: C.danger }}>Stop</button>
+                </div>
+              </div>
+
+              {/* VERDICT SECTION */}
+              {!(taskFailedLocally || task?.result === "fail") ? (
+                /* Primary verdict before fail */
+                <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
+                  <button
+                    onClick={passTask}
+                    disabled={taskPending}
+                    style={{
+                      width: "100%",
+                      padding: "0.875rem",
+                      borderRadius: "0.75rem",
+                      border: "none",
+                      backgroundColor: C.success,
+                      color: C.bg,
+                      fontSize: "1.1rem",
+                      fontWeight: 800,
+                      cursor: taskPending ? "not-allowed" : "pointer",
+                      opacity: taskPending ? 0.6 : 1,
+                    }}
+                  >
+                    PASS (+{phaseQuestion?.reward ?? task?.defaultReward ?? 100} pts)
+                  </button>
+
+                  {!failArmed ? (
+                    <button
+                      onClick={() => setFailArmed(true)}
+                      disabled={taskPending}
+                      style={{
+                        width: "100%",
+                        padding: "0.875rem",
+                        borderRadius: "0.75rem",
+                        border: "none",
+                        backgroundColor: C.danger,
+                        color: C.bg,
+                        fontSize: "1.05rem",
+                        fontWeight: 800,
+                        cursor: taskPending ? "not-allowed" : "pointer",
+                        opacity: taskPending ? 0.6 : 1,
+                      }}
+                    >
+                      FAIL (0 pts to {phaseWinner?.teamName || task?.teamName || "Winner"})
+                    </button>
+                  ) : (
+                    <div style={styles.confirmRow}>
+                      <span style={styles.confirmText}>
+                        Confirm FAIL? {phaseWinner?.teamName || task?.teamName} receives 0 points.
+                      </span>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button
+                          onClick={failTask}
+                          disabled={taskPending}
+                          style={{ ...styles.failBtn, flex: 1 }}
+                        >
+                          Confirm FAIL
+                        </button>
+                        <button
+                          onClick={() => setFailArmed(false)}
+                          disabled={taskPending}
+                          style={{ ...styles.cancelBtn, flex: 1 }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* AFTER FAIL: OPTION A or OPTION B */
+                <div style={{
+                  display: "flex", flexDirection: "column", gap: "1rem",
+                  padding: "1rem", borderRadius: "0.75rem",
+                  border: `2px solid ${C.danger}`, backgroundColor: `${C.danger}08`,
+                }}>
+                  <div style={{ fontWeight: 800, color: C.danger, fontSize: "0.95rem" }}>
+                    ⚠️ {phaseWinner?.teamName || task?.teamName || "Winning Team"} FAILED (0 pts awarded). Choose resolution:
+                  </div>
+
+                  {/* Option A */}
+                  <div style={{
+                    padding: "0.75rem", borderRadius: "0.5rem",
+                    backgroundColor: C.surface, border: `1px solid ${C.border}`,
+                    display: "flex", flexDirection: "column", gap: "0.5rem",
+                  }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.9rem", color: C.text }}>
+                      Option A: End Normally (No Reward)
+                    </span>
+                    <p style={{ fontSize: "0.8rem", color: C.muted, margin: 0 }}>
+                      Close this round immediately with 0 reward points awarded to any team.
+                    </p>
+                    <button
+                      onClick={endFailedTask}
+                      disabled={endRoundBusy}
+                      style={{
+                        padding: "0.75rem",
+                        borderRadius: "0.5rem",
+                        border: `1px solid ${C.border}`,
+                        backgroundColor: "transparent",
+                        color: C.text,
+                        fontWeight: 700,
+                        fontSize: "0.9rem",
+                        cursor: endRoundBusy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      End Round (No Winner)
+                    </button>
+                  </div>
+
+                  {/* Option B */}
+                  <div style={{
+                    padding: "0.75rem", borderRadius: "0.5rem",
+                    backgroundColor: C.surface, border: `1px solid ${C.accent}`,
+                    display: "flex", flexDirection: "column", gap: "0.5rem",
+                  }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.9rem", color: C.accent }}>
+                      Option B: Fallback (Award to Another Team)
+                    </span>
+                    <p style={{ fontSize: "0.8rem", color: C.muted, margin: 0 }}>
+                      Optionally run the Open Challenge timer above, then select which team answered correctly.
+                    </p>
+                    <select
+                      value={fallbackTeamId}
+                      onChange={(e) => setFallbackTeamId(e.target.value)}
+                      disabled={fallbackBusy}
+                      style={{
+                        width: "100%",
+                        padding: "0.6rem 0.75rem",
+                        borderRadius: "0.5rem",
+                        border: `1px solid ${C.border}`,
+                        backgroundColor: C.bg,
+                        color: C.text,
+                        fontSize: "0.9rem",
+                        outline: "none",
+                      }}
+                    >
+                      <option value="">-- Choose fallback team --</option>
+                      {scoreboard
+                        .filter((t) => t.teamId !== phaseWinner?.teamId)
+                        .map((t) => (
+                          <option key={t.teamId} value={t.teamId}>
+                            {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
+                          </option>
+                        ))}
+                    </select>
+
+                    <button
+                      onClick={assignFallback}
+                      disabled={!fallbackTeamId || fallbackBusy}
+                      style={{
+                        padding: "0.75rem",
+                        borderRadius: "0.5rem",
+                        border: "none",
+                        backgroundColor: C.success,
+                        color: C.bg,
+                        fontWeight: 800,
+                        fontSize: "0.95rem",
+                        cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
+                        opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
+                      }}
+                    >
+                      Award Reward (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
-          ) : <div style={styles.empty}>No active task</div>}
+          ) : phase === "ended" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1rem" }}>
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, color: C.text }}>
+                Round Completed
+              </div>
+              <div style={{ fontSize: "0.9rem", color: C.muted }}>
+                {phaseWinner
+                  ? `Winner: ${phaseWinner.teamName} · Final Bid: ${phaseBid ?? 0} coins`
+                  : "No winner for this round."}
+              </div>
+              <button
+                onClick={endRound}
+                disabled={endRoundBusy}
+                style={{
+                  ...styles.startBtn,
+                  backgroundColor: C.primary,
+                  marginTop: "0.5rem",
+                }}
+              >
+                Reset & Prepare Next Auction
+              </button>
+            </div>
+          ) : phase === "bidding" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", textAlign: "center", padding: "1.5rem 0" }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Auction In Progress
+              </span>
+              <div style={{ ...styles.taskTimer, color: C.accent }}>
+                {formatClock((biddingTimer ? biddingTimer.remaining : timer) ?? 0)}
+              </div>
+              <div style={{ fontSize: "0.85rem", color: C.muted }}>
+                Main task timer will start automatically upon winning bid.
+              </div>
+            </div>
+          ) : (
+            <div style={styles.empty}>
+              No active task. Select a question above and click "Start Auction (60s)".
+            </div>
+          )}
         </Card>
 
         <Card title="Scoreboard" span={6} scroll>

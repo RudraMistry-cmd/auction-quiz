@@ -6,6 +6,7 @@ import { auctionService } from "../services/auction.service";
 import { taskService } from "../services/task.service";
 import { questionService } from "../services/question.service";
 import { stateManager } from "../services/phase.service";
+import { timerEngineService } from "../services/timer-engine.service";
 import { manualTimerService } from "../services/manual-timer.service";
 import { ADMIN_SECRET, ALLOW_REMOTE_ADMIN, isLocalOrHostIp } from "../auth";
 import { getDb, persistDb } from "../db/database";
@@ -48,8 +49,10 @@ export function setupSocketHandlers(io: Server) {
 
     console.log(`[Socket] Client connected: ${socket.id} (ip: ${clientIp}, isAdmin: ${!!socket.data.isAdmin})`);
 
-    // Send current theme to new client immediately
+    // Send current theme and game state to new client immediately
     socket.emit("theme:changed", { theme: currentTheme });
+    socket.emit("phase:changed", stateManager.getGameState());
+    socket.emit("timer:update", timerEngineService.getTimers() as any);
 
     socket.on("client:register", async (data, cb) => {
       try {
@@ -92,6 +95,7 @@ export function setupSocketHandlers(io: Server) {
         }
 
         const taskState = await taskService.getTaskState();
+        const gameState = stateManager.getGameState();
 
         // Display separation: team sockets never receive question content
         // (no activeQuestion / upcomingQuestion). Teams see only balances,
@@ -102,7 +106,8 @@ export function setupSocketHandlers(io: Server) {
           currentAuction: activeAuction || undefined,
           currentBid,
           timer,
-          phase: taskState.phase,
+          phase: gameState.phase,
+          gameState,
           activeTask: taskState.task || undefined,
           taskTimer: taskState.task ? taskState.task.timeLeft : undefined,
         });
@@ -159,6 +164,14 @@ export function setupSocketHandlers(io: Server) {
       } catch (err) {
         console.error("[Socket] client:get_scoreboard failed:", err);
         cb({ teams: [] });
+      }
+    });
+
+    socket.on("client:get_game_state", (cb) => {
+      try {
+        cb({ success: true, gameState: stateManager.getGameState() });
+      } catch (err: any) {
+        cb({ success: false, error: err.message });
       }
     });
 
@@ -521,6 +534,247 @@ export function setupSocketHandlers(io: Server) {
       }
     });
 
+    // ─── Phase & Transition Handlers ───
+    socket.on("admin:start_auction", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const curQ = stateManager.getCurrentQuestion();
+        if (!curQ) {
+          cb({ success: false, error: "Please select a question before starting auction." });
+          return;
+        }
+        await auctionControl.startAuction();
+        cb({ success: true });
+      } catch (err: any) {
+        console.error("[Socket] admin:start_auction failed:", err);
+        cb({ success: false, error: err.message || "Failed to start auction." });
+      }
+    });
+
+    socket.on("admin:get_manifest", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const questions = stateManager.getManifest();
+        const currentQuestion = stateManager.getCurrentQuestion();
+        cb({ success: true, questions, currentQuestion });
+      } catch (err: any) {
+        cb({ success: false, questions: [], currentQuestion: null, error: err.message });
+      }
+    });
+
+    socket.on("admin:select_question", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        if (!data?.questionId) {
+          cb({ success: false, error: "Missing questionId" });
+          return;
+        }
+        const q = stateManager.selectQuestion(data.questionId);
+        if (!q) {
+          cb({ success: false, error: "Question not found in manifest" });
+          return;
+        }
+        io.emit("question:image_set", { imagePath: q.image, question: q });
+        io.emit("phase:changed", stateManager.getGameState());
+        cb({ success: true, question: q });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to select question" });
+      }
+    });
+
+    socket.on("admin:pass_task", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const r = await taskService.passWinningTask();
+        const scoreboard = await teamService.getScoreboard();
+        io.emit("task:result", {
+          taskId: r.task.taskId,
+          result: "pass",
+          teamId: r.team.teamId,
+          teamName: r.team.teamName,
+          coins: r.team.bid_coins,
+          rewardPoints: r.team.reward_points,
+          rewardGranted: r.appliedReward,
+          coinsDeducted: 0,
+        });
+        io.emit("sound:task_result", { result: "pass" });
+        io.emit("scoreboard:updated", { teams: scoreboard as any });
+        io.emit("phase:changed", stateManager.getGameState());
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Pass failed" });
+      }
+    });
+
+    socket.on("admin:fail_task", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        await taskService.failWinningTask();
+        io.emit("sound:task_result", { result: "fail" });
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Fail failed" });
+      }
+    });
+
+    socket.on("admin:end_failed_task", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        await taskService.endFailedTaskNormally();
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "End failed task failed" });
+      }
+    });
+
+    socket.on("admin:assign_fallback", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        if (!data?.teamId) {
+          cb({ success: false, error: "Missing teamId" });
+          return;
+        }
+        const r = await taskService.assignFallbackTeam(data.teamId);
+        const scoreboard = await teamService.getScoreboard();
+        io.emit("task:result", {
+          taskId: r.task.taskId,
+          result: "pass",
+          teamId: r.fallbackTeam.teamId,
+          teamName: r.fallbackTeam.teamName,
+          coins: r.fallbackTeam.bid_coins,
+          rewardPoints: r.fallbackTeam.reward_points,
+          rewardGranted: r.rewardPoints,
+          coinsDeducted: 0,
+        });
+        io.emit("sound:task_result", { result: "pass" });
+        io.emit("scoreboard:updated", { teams: scoreboard as any });
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Assign fallback failed" });
+      }
+    });
+
+    // Explicit Timer Handlers (admin-controlled optional timer, does not mutate phase)
+    socket.on("admin:explicit_timer_start", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const duration = data?.duration || 60;
+        const timer = timerEngineService.startExplicitTimer(duration);
+        io.emit("timer:explicit:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("timer:side:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true, timer });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Explicit timer start failed" });
+      }
+    });
+
+    socket.on("admin:explicit_timer_pause", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.pauseExplicitTimer();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Explicit timer pause failed" });
+      }
+    });
+
+    socket.on("admin:explicit_timer_adjust", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const s = data?.seconds || 30;
+        timerEngineService.adjustExplicitTimer(s);
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Explicit timer adjust failed" });
+      }
+    });
+
+    socket.on("admin:explicit_timer_stop", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.stopExplicitTimer();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Explicit timer stop failed" });
+      }
+    });
+
+    // Backwards-compatible side timer events
+    socket.on("admin:side_timer_start", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const duration = data?.duration || 60;
+        const timer = timerEngineService.startExplicitTimer(duration);
+        io.emit("timer:side:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("timer:explicit:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Side timer start failed" });
+      }
+    });
+
+    socket.on("admin:side_timer_pause", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.pauseExplicitTimer();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Side timer pause failed" });
+      }
+    });
+
+    socket.on("admin:side_timer_adjust", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const s = data?.seconds || 30;
+        timerEngineService.adjustExplicitTimer(s);
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Side timer adjust failed" });
+      }
+    });
+
+    socket.on("admin:end_round", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        stateManager.resetRound();
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "End round failed" });
+      }
+    });
+
     socket.on("disconnect", () => {
       const teamId = socketTeamMap.get(socket.id);
       console.log(`[Socket] Client disconnected: ${socket.id} (team: ${teamId || "none"})`);
@@ -533,6 +787,16 @@ export function setupSocketHandlers(io: Server) {
     io.emit("timer:update", state);
   });
 
+  // Wire singleton timerEngineService to broadcast every second
+  timerEngineService.setTickCallback((timers) => {
+    io.emit("timer:update", {
+      ...timers,
+      duration: timers.sideTaskTimer?.duration ?? timers.mainTaskTimer?.duration ?? 0,
+      timeLeft: timers.sideTaskTimer?.remaining ?? timers.mainTaskTimer?.remaining ?? 0,
+      isRunning: timers.sideTaskTimer?.isRunning ?? timers.mainTaskTimer?.isRunning ?? false,
+    });
+  });
+
   // (Re)starts the authoritative per-second task ticks. Safe to call
   // redundantly — previous interval is always cleared first.
   const beginTaskCountdown = (taskId: string) => {
@@ -541,8 +805,6 @@ export function setupSocketHandlers(io: Server) {
         io.emit("task:timer", { taskId, timeLeft, version: taskService.getVersion() });
       },
       async () => {
-        // Emit ONLY on a real transition: a verdict recorded in the final
-        // millisecond must not be followed by a stale "Time Up".
         const expired = await taskService.expireTask(taskId);
         if (expired) {
           io.emit("task:ended", { taskId });
@@ -552,93 +814,109 @@ export function setupSocketHandlers(io: Server) {
     );
   };
 
-  return {
+  const auctionControl = {
     startAuction: async (opts?: { question?: string; defaultReward?: number }) => {
+      const curQ = stateManager.getCurrentQuestion();
+      if (!curQ) {
+        throw new Error("No question selected. Please select a question before starting auction.");
+      }
+
       const auction = await auctionService.startAuction({ ...AUCTION_CONFIG, ...opts });
       io.emit("auction:started", auction);
       io.emit("sound:auction_started");
 
-      // The round's question goes public the moment bidding opens.
-      if (auction.questionId) {
-        const bankQ = await questionService.getQuestion(auction.questionId);
-        if (bankQ) {
-          io.emit("question:active", questionService.toPayload(bankQ));
-        }
-      }
+      // Set phase to bidding and broadcast
+      io.emit("phase:changed", stateManager.getGameState());
 
-      auctionService.startTimer(
-        (remaining) => {
-          io.emit("auction:timer", { auctionId: auction.auctionId, remaining });
-        },
-        async () => {
-          try {
-            const result = await auctionService.endAuction();
-            if (!result) return;
+      // Start 60s bidding timer via singleton timerEngineService
+      timerEngineService.startBidding(60, async () => {
+        try {
+          const result = await auctionService.endAuction();
+          if (!result) return;
 
-            io.emit("auction:ended", {
-              auctionId: result.auction.auctionId,
-              winner: result.winner
-                ? { teamId: result.winner.teamId, teamName: result.winner.teamName } as any
-                : null,
-              winningBid: result.winningBid,
-            });
+          io.emit("sound:auction_ended");
 
-            // Sound triggers for auction end
-            io.emit("sound:auction_ended");
-            if (result.winner && result.winningBid != null) {
+          if (result.winner && result.winningBid != null) {
+            // BID WIN (CRITICAL FLOW)
+            // Automatically:
+            // 1. Stop biddingTimer (already stopped by timerEngineService)
+            // 2. Set winningTeam & phase = "main_task"
+            // 3. Start mainTaskTimer using dynamic time from question (NOT hardcoded 300s)
+            // IMPORTANT: No admin click required between bid win and task start!
+            try {
+              const task = await taskService.assignTask({
+                auctionId: result.auction.auctionId,
+                teamId: result.winner.teamId,
+                teamName: result.winner.teamName,
+                finalBid: result.winningBid,
+              });
+
+              const dynamicTime = curQ.time;
+              const mainTimer = timerEngineService.startMainTask(dynamicTime, () => {
+                io.emit("task:ended", { taskId: task.taskId });
+              });
+
+              io.emit("auction:ended", {
+                auctionId: result.auction.auctionId,
+                winner: { teamId: result.winner.teamId, teamName: result.winner.teamName },
+                winningBid: result.winningBid,
+              });
               io.emit("sound:bid_won", {
                 teamName: result.winner.teamName,
                 bidAmount: result.winningBid,
               });
+              io.emit("task:assigned", task as any);
+              io.emit("task:started", {
+                time_limit: dynamicTime,
+                endAt: Date.now() + dynamicTime * 1000,
+                taskId: task.taskId,
+                teamName: task.teamName,
+                reward: curQ.reward,
+                questionImage: curQ.image,
+              });
+              io.emit("timer:main:start", {
+                startTime: mainTimer.startTime,
+                duration: mainTimer.duration,
+                remaining: mainTimer.remaining,
+              });
+              io.emit("phase:changed", stateManager.getGameState());
+              console.log(`[Auction->Task] Auto transitioned: ${task.teamName} won for ${task.finalBid}. Task timer: ${dynamicTime}s`);
+            } catch (err) {
+              console.error("[Auction] Auto task assignment failed:", err);
+              stateManager.setPhase("ended");
+              io.emit("phase:changed", stateManager.getGameState());
             }
-
-            // AUCTION_ACTIVE → TASK_ACTIVE (or back to IDLE with no winner).
-            if (result.winner && result.winningBid != null) {
-              try {
-                const task = await taskService.assignTask({
-                  auctionId: result.auction.auctionId,
-                  teamId: result.winner.teamId,
-                  teamName: result.winner.teamName,
-                  finalBid: result.winningBid,
-                });
-                io.emit("task:assigned", task as any);
-                console.log(`[Task] Assigned: ${task.taskId} → ${task.teamName} (finalBid ${task.finalBid})`);
-                if (task.questionId) {
-                  const bankQ = await questionService.getQuestion(task.questionId);
-                  if (bankQ) {
-                    io.emit("question:active", questionService.toPayload(bankQ, task.taskId));
-                  }
-                }
-                const timeLimit = task.time_limit || 300;
-                // Question already locked as used at auction start
-                // (takeSelection) + auction end / assignTask safety nets.
-                io.emit("task:started", {
-                  time_limit: timeLimit,
-                  endAt: task.endAt,
-                  taskId: task.taskId,
-                });
-                io.emit("task:timer", { taskId: task.taskId, timeLeft: timeLimit, version: taskService.getVersion() });
-                beginTaskCountdown(task.taskId);
-              } catch (err) {
-                // Never strand the machine in 'auction': fall back to idle.
-                console.error("[Task] assignTask failed, closing auction to idle:", err);
-                stateManager.auctionClosedIdle(result.auction.auctionId);
-              }
-            } else {
-              stateManager.auctionClosedIdle(result.auction.auctionId);
-            }
-            // Auction display state is over on every path (task assigned,
-            // idle fallback, or no winner). Task/question state is
-            // deliberately untouched — the task phase owns screens now.
-            stateManager.setQuestionImage(null);
-            io.emit("auction:cleared");
-          } catch (err) {
-            console.error("[Socket] auction end orchestration failed:", err);
+          } else {
+            // EDGE CASE: If 60s timer expires with 0 bids:
+            // - phase = "ended"
+            // - show "No Winner"
+            // - do NOT start task timer
+            stateManager.auctionClosedIdle(result.auction.auctionId);
+            io.emit("auction:ended", {
+              auctionId: result.auction.auctionId,
+              winner: null,
+              winningBid: null,
+            });
+            io.emit("phase:changed", stateManager.getGameState());
+            console.log(`[Auction] Ended with 0 bids. Phase: ended ("No Winner")`);
           }
+        } catch (err) {
+          console.error("[Socket] Auction expiry handling failed:", err);
         }
+      });
+
+      // Backward compatible timer ticker
+      auctionService.startTimer(
+        (remaining) => {
+          io.emit("auction:timer", { auctionId: auction.auctionId, remaining });
+        },
+        () => {}
       );
 
+      io.emit("timer:update", timerEngineService.getTimers() as any);
       return auction;
     },
   };
+
+  return auctionControl;
 }

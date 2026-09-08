@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getDb, persistDb } from "../db/database";
 import { stateManager } from "./phase.service";
+import { timerEngineService } from "./timer-engine.service";
 import { questionService } from "./question.service";
 import type { Task, TaskResultDecision, Team } from "../types";
 
@@ -93,7 +94,8 @@ export class TaskService {
     finalBid: number;
   }): Promise<Task> {
     return this.withLock(async () => {
-      if (stateManager.getPhase() !== "auction" || stateManager.getAuctionId() !== params.auctionId) {
+      const currentPhase = stateManager.getPhase();
+      if (currentPhase !== "bidding" || stateManager.getAuctionId() !== params.auctionId) {
         throw new Error("Cannot assign task: no auction just ended");
       }
 
@@ -105,9 +107,11 @@ export class TaskService {
         SELECT question, defaultReward, questionId, time_limit FROM auctions WHERE auctionId = ?
       `, [params.auctionId]);
 
-      const timeLimit = typeof round?.time_limit === "number" && round.time_limit > 0
-        ? round.time_limit
-        : TASK_DURATION_S;
+      const curQ = stateManager.getCurrentQuestion();
+      if (!curQ || typeof curQ.time !== "number" || curQ.time <= 0) {
+        throw new Error("Cannot assign task: Question time is required (NO defaults allowed)");
+      }
+      const timeLimit = curQ.time;
       const endAt = now + timeLimit * 1000;
 
       const task: Task = {
@@ -116,9 +120,9 @@ export class TaskService {
         teamId: params.teamId,
         teamName: params.teamName,
         finalBid: params.finalBid,
-        question: (round?.question as string) ?? null,
-        defaultReward: typeof round?.defaultReward === "number" ? round.defaultReward : 1,
-        questionId: round?.questionId as string ?? "",
+        question: curQ?.image || ((round?.question as string) ?? null),
+        defaultReward: curQ?.reward || (typeof round?.defaultReward === "number" ? round.defaultReward : 1),
+        questionId: curQ?.id || ((round?.questionId as string) ?? ""),
         options: null,
         time_limit: timeLimit,
         template_html: undefined,
@@ -143,7 +147,7 @@ export class TaskService {
 
       this.activeTask = task;
       this.stamp(task);
-      stateManager.auctionClosedToTask(params.auctionId, task.taskId);
+      stateManager.auctionClosedToTask(params.auctionId, task.taskId, { teamId: params.teamId, teamName: params.teamName }, params.finalBid);
       return this.activeTask;
     });
   }
@@ -380,7 +384,8 @@ export class TaskService {
         throw new Error("Cannot mark result: no decidable task");
       }
       // …and authorized: live task phase.
-      const livePath = stateManager.getPhase() === "task" &&
+      const currentPhase = stateManager.getPhase();
+      const livePath = currentPhase === "main_task" &&
         stateManager.getTaskId() === params.taskId &&
         this.activeTask?.taskId === params.taskId;
       if (!livePath) {
@@ -457,16 +462,112 @@ export class TaskService {
     });
   }
 
+  /** PASS the active main task */
+  async passWinningTask(): Promise<TaskResolution> {
+    const t = this.activeTask;
+    if (!t) throw new Error("No active task to pass");
+    timerEngineService.stopMainTask();
+    timerEngineService.stopExplicitTimer();
+    const res = await this.submitResult({ taskId: t.taskId, result: "pass" });
+    stateManager.setPhase("ended");
+    return res;
+  }
+
+  /** FAIL the active main task: stops mainTaskTimer, marks winning team 0 points (no forced phase change) */
+  async failWinningTask(): Promise<{ task: Task; winningTeam: Team }> {
+    return this.withLock(async () => {
+      const t = this.activeTask;
+      if (!t) throw new Error("No active task to fail");
+      const db = await getDb();
+
+      timerEngineService.stopMainTask();
+
+      // Winning team gets NOTHING: mark task result as 'fail'
+      run(db, `UPDATE tasks SET result = 'fail' WHERE taskId = ?`, [t.taskId]);
+      persistDb();
+
+      stateManager.markMainTaskFailed();
+
+      const team = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [t.teamId]) as Team;
+      return { task: { ...t, result: "fail" }, winningTeam: team };
+    });
+  }
+
+  /** End failed task normally without awarding any fallback team (phase = ended) */
+  async endFailedTaskNormally(): Promise<{ task: Task }> {
+    return this.withLock(async () => {
+      const t = this.activeTask;
+      if (!t) throw new Error("No active task");
+      const db = await getDb();
+      timerEngineService.stopMainTask();
+      timerEngineService.stopExplicitTimer();
+      run(db, `UPDATE tasks SET status = 'completed', result = 'fail' WHERE taskId = ?`, [t.taskId]);
+      run(db, `
+        INSERT INTO task_results (resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt)
+        VALUES (?, ?, 'fail', 0, 0, ?)
+      `, [uuidv4(), t.taskId, Date.now()]);
+      persistDb();
+      stateManager.setPhase("ended");
+      const finished: Task = { ...t, status: "completed" as const, result: "fail" };
+      this.activeTask = null;
+      return { task: finished };
+    });
+  }
+
+  /** Assign reward to another team (optional fallback) */
+  async assignFallbackTeam(teamId: string): Promise<{ fallbackTeam: Team; rewardPoints: number; task: Task }> {
+    return this.withLock(async () => {
+      const t = this.activeTask;
+      if (!t) throw new Error("No active task");
+
+      const db = await getDb();
+      const fallbackTeam = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [teamId]);
+      if (!fallbackTeam) throw new Error("Fallback team not found");
+
+      const curQ = stateManager.getCurrentQuestion();
+      const rewardPoints = curQ?.reward ?? (typeof t.defaultReward === "number" ? t.defaultReward : 100);
+
+      run(db, "BEGIN IMMEDIATE");
+      try {
+        run(db, `UPDATE teams SET reward_points = reward_points + ? WHERE teamId = ?`, [rewardPoints, teamId]);
+        run(db, `UPDATE tasks SET status = 'completed' WHERE taskId = ?`, [t.taskId]);
+        run(db, `
+          INSERT INTO task_results (resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt)
+          VALUES (?, ?, 'pass', ?, 0, ?)
+        `, [uuidv4(), t.taskId, rewardPoints, Date.now()]);
+        run(db, "COMMIT");
+      } catch (err) {
+        try { run(db, "ROLLBACK"); } catch {}
+        throw err;
+      }
+      persistDb();
+
+      timerEngineService.stopMainTask();
+      timerEngineService.stopExplicitTimer();
+      stateManager.setPhase("ended");
+      const finished: Task = { ...t, status: "completed" as const, result: "fail" };
+      this.activeTask = null;
+
+      const updatedTeam = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [teamId]) as Team;
+      return { fallbackTeam: updatedTeam, rewardPoints, task: finished };
+    });
+  }
+
   /** Snapshot for reconnects and the public REST endpoint. */
   async getTaskState(): Promise<{
-    phase: "idle" | "auction" | "task";
+    phase: any;
     task: (Task & { timeLeft: number }) | null;
   }> {
     const t = this.activeTask;
     if (!t) return { phase: stateManager.getPhase(), task: null };
-    const timeLeft = t.paused
-      ? this.pausedRemaining
-      : Math.max(0, Math.ceil((t.endAt - Date.now()) / 1000));
+    const timers = timerEngineService.getTimers();
+    const timeLeft = timers.mainTaskTimer ? timers.mainTaskTimer.remaining : (
+      timers.sideTaskTimer ? timers.sideTaskTimer.remaining : (
+        t.paused
+          ? this.pausedRemaining
+          : Math.max(0, Math.ceil((t.endAt - Date.now()) / 1000))
+      )
+    );
     return {
       phase: stateManager.getPhase(),
       task: { ...t, timeLeft },

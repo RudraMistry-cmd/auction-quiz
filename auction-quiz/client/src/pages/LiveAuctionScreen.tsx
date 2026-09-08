@@ -10,7 +10,7 @@ import {
   DURATION,
   EASE,
 } from "../utils/motion";
-import type { Auction } from "../shared/types";
+import type { Auction, TimestampTimer } from "../shared/types";
 
 const C = tokens.color;
 const F = tokens.font;
@@ -64,6 +64,60 @@ function TimerDisplay({ timeLeft, size = "large" }: { timeLeft: number; size?: "
           }}
         >HURRY</motion.span>
       )}
+    </motion.div>
+  );
+}
+
+/* ─── Side Timer Card (Top Right Dual Timer Panel) ─── */
+function SideTimerCard({ timer }: { timer: TimestampTimer }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 30 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.4, ease: EASE.out }}
+      style={{
+        position: "fixed",
+        top: "24px",
+        right: "24px",
+        backgroundColor: "#1E293B",
+        border: `2px solid ${C.accent}`,
+        borderRadius: tokens.radius.lg,
+        padding: "12px 24px",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.3)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        zIndex: 100,
+      }}
+    >
+      <span style={{
+        fontSize: "0.75rem",
+        fontWeight: 800,
+        color: C.accent,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        marginBottom: "4px",
+      }}>
+        {timer.label || "Open Challenge"}
+      </span>
+      <span style={{
+        fontFamily: F.heading,
+        fontWeight: 900,
+        fontSize: "clamp(1.8rem, 3.5vw, 2.5rem)",
+        color: "#fff",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {formatClock(timer.remaining)}
+      </span>
+      <span style={{
+        fontSize: "0.65rem",
+        fontWeight: 700,
+        color: timer.isRunning ? C.success : C.accent,
+        textTransform: "uppercase",
+        marginTop: "2px",
+      }}>
+        {timer.isRunning ? "RUNNING" : "PAUSED"}
+      </span>
     </motion.div>
   );
 }
@@ -255,7 +309,24 @@ function QuestionImage({ imagePath }: { imagePath: string }) {
 
 /* ─── Main Component ─── */
 export default function LiveAuctionScreen() {
-  const { socket, connected, phase, task, taskTimer, taskEnded, taskPaused } = useGamePhase();
+  const {
+    socket,
+    connected,
+    phase,
+    currentQuestion,
+    currentBid: gameBid,
+    winningTeam,
+    biddingTimer,
+    mainTaskTimer,
+    sideTaskTimer,
+    explicitTimer,
+    task,
+    taskTimer,
+    taskEnded,
+    taskPaused,
+    lastResult,
+  } = useGamePhase();
+
   const [auction, setAuction] = useState<(Auction & { currentBid?: number; leadingTeam?: string }) | null>(null);
   const [currentBid, setCurrentBid] = useState(0);
   const [leadingTeam, setLeadingTeam] = useState("");
@@ -266,6 +337,17 @@ export default function LiveAuctionScreen() {
   const [questionImage, setQuestionImage] = useState<string | null>(null);
   const [manualTimer, setManualTimer] = useState({ isRunning: false, timeLeft: 0 });
   const prevBid = useRef(0);
+
+  // Sync gameBid & winningTeam from phase
+  useEffect(() => {
+    if (gameBid) setCurrentBid(gameBid);
+  }, [gameBid]);
+
+  useEffect(() => {
+    if (winningTeam) {
+      setWinner({ teamName: winningTeam.teamName, bid: gameBid || currentBid });
+    }
+  }, [winningTeam, gameBid, currentBid]);
 
   // Socket listeners
   useEffect(() => {
@@ -278,20 +360,22 @@ export default function LiveAuctionScreen() {
       setWinner(null);
     };
 
-    const handleBidUpdate = (data: { auctionId: string; bid: any; teamName: string; increment: number }) => {
+    const handleBidUpdate = (data: { auctionId: string; bid: any; teamName: string; increment?: number }) => {
       setCurrentBid(data.bid.amount);
       setLeadingTeam(data.teamName);
-      setLastIncrement(data.increment);
+      if (data.increment) setLastIncrement(data.increment);
     };
 
     const handleTimer = (data: { auctionId: string; remaining: number }) => {
       setTimer(data.remaining);
     };
 
-    const handleEnded = (data: { auctionId: string; winner: any; winningBid: number | null }) => {
-      setAuction(prev => prev ? { ...prev, status: "completed" } : null);
-      if (data.winner && data.winningBid) {
+    const handleEnded = (data: { auctionId?: string; winner: any; winningBid: number | null }) => {
+      setAuction((prev) => (prev ? { ...prev, status: "completed" } : null));
+      if (data.winner && data.winningBid != null) {
         setWinner({ teamName: data.winner.teamName, bid: data.winningBid });
+      } else {
+        setWinner(null);
       }
     };
 
@@ -302,8 +386,10 @@ export default function LiveAuctionScreen() {
       setWinner(null);
     };
 
-    const handleManualTimer = (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => {
-      setManualTimer({ isRunning: data.isRunning, timeLeft: data.timeLeft });
+    const handleManualTimer = (data: any) => {
+      if (data.isRunning !== undefined && data.timeLeft !== undefined) {
+        setManualTimer({ isRunning: data.isRunning, timeLeft: data.timeLeft });
+      }
     };
 
     const handleImageSet = (data: { imagePath: string }) => {
@@ -377,18 +463,43 @@ export default function LiveAuctionScreen() {
     prevBid.current = currentBid;
   }, [currentBid]);
 
-  // Determine display state
-  const isActive = auction?.status === "active" && timer > 0;
-  const showManualTimer = manualTimer.isRunning || manualTimer.timeLeft > 0;
-  const showTask = phase === "task" && task;
-  const showResult = taskEnded && task;
+  // Determine display state based on 4-phase model: idle | bidding | main_task | ended
+  const isBidding = phase === "bidding" || (auction?.status === "active" && timer > 0);
+  const isMainTask = phase === "main_task" || ((phase as any) === "task" && !taskEnded);
+  const isEnded = phase === "ended";
 
   let displayState: DisplayState = "idle";
-  if (showResult) displayState = "result";
-  else if (showTask) displayState = "task";
-  else if (winner) displayState = "ended";
-  else if (isActive) displayState = "auction";
-  else if (showManualTimer && questionImage) displayState = "auction";
+  if (lastResult || task?.result) {
+    displayState = "result";
+  } else if (isMainTask) {
+    displayState = "task";
+  } else if (isBidding) {
+    displayState = "auction";
+  } else if (isEnded) {
+    displayState = "ended";
+  } else if (winner) {
+    displayState = "ended";
+  }
+
+  // Active image path
+  const activeImage = currentQuestion?.image || questionImage;
+
+  // Active central timer value
+  let centralTimeLeft = 0;
+  let showCentralTimer = false;
+
+  if (isBidding) {
+    centralTimeLeft = biddingTimer ? biddingTimer.remaining : timer;
+    showCentralTimer = true;
+  } else if (isMainTask) {
+    centralTimeLeft = mainTaskTimer ? mainTaskTimer.remaining : taskTimer;
+    showCentralTimer = true;
+  } else if (manualTimer.isRunning || manualTimer.timeLeft > 0) {
+    centralTimeLeft = manualTimer.timeLeft;
+    showCentralTimer = true;
+  }
+
+  const activeSecondaryTimer = explicitTimer || sideTaskTimer;
 
   return (
     <div style={root}>
@@ -417,15 +528,20 @@ export default function LiveAuctionScreen() {
         }
       `}</style>
 
+      {/* Secondary Timer Card: "Open Challenge" (optional explicit timer, runs independently) */}
+      {activeSecondaryTimer && activeSecondaryTimer.remaining > 0 && (
+        <SideTimerCard timer={activeSecondaryTimer} />
+      )}
+
       {/* Brand Header */}
       <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
         <BrandHeader variant="live" />
       </div>
 
-      {/* Timer - Top Center (always visible when active) */}
-      {(isActive || showManualTimer) && displayState !== "result" && (
+      {/* Timer - Top Center (visible during bidding, task, or side_task) */}
+      {showCentralTimer && displayState !== "result" && displayState !== "ended" && (
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "24px" }}>
-          <TimerDisplay timeLeft={isActive ? timer : manualTimer.timeLeft} size="large" />
+          <TimerDisplay timeLeft={centralTimeLeft} size="large" />
         </div>
       )}
 
@@ -434,8 +550,25 @@ export default function LiveAuctionScreen() {
         {/* IDLE STATE */}
         {displayState === "idle" && (
           <div style={stage}>
-            {questionImage ? (
-              <QuestionImage imagePath={questionImage} />
+            {activeImage ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+                <QuestionImage imagePath={activeImage} />
+                {currentQuestion && (
+                  <div style={{
+                    display: "flex", gap: "24px",
+                    fontFamily: F.heading, fontWeight: 700, fontSize: "1.2rem",
+                    color: C.accent,
+                  }}>
+                    <span>Reward: {currentQuestion.reward} pts</span>
+                    <span>Time Limit: {currentQuestion.time}s</span>
+                  </div>
+                )}
+                <div style={{
+                  fontFamily: F.body, fontSize: "1.1rem", color: "#94A3B8",
+                }}>
+                  Question selected · Ready to start auction
+                </div>
+              </div>
             ) : (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -458,37 +591,82 @@ export default function LiveAuctionScreen() {
           </div>
         )}
 
-        {/* AUCTION RUNNING STATE */}
+        {/* AUCTION / BIDDING STATE */}
         {displayState === "auction" && (
           <div style={stage}>
             <BidHero amount={currentBid} animate={bidFlash} increment={lastIncrement} />
             {leadingTeam && <LeadingBadge teamName={leadingTeam} />}
-            {questionImage && <QuestionImage imagePath={questionImage} />}
+            {activeImage && <QuestionImage imagePath={activeImage} />}
           </div>
         )}
 
-        {/* ENDED STATE */}
-        {displayState === "ended" && winner && (
+        {/* MAIN TASK RUNNING STATE */}
+        {displayState === "task" && (
           <div style={stage}>
-            <WinnerDisplay teamName={winner.teamName} bid={winner.bid} />
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ textAlign: "center", marginBottom: "8px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}
+            >
+              <span style={{
+                fontFamily: F.heading, fontWeight: 800, fontSize: "clamp(1.2rem, 2.5vw, 1.8rem)",
+                color: C.accent, backgroundColor: `${C.accent}15`, border: `2px solid ${C.accent}`,
+                borderRadius: tokens.radius.full, padding: "8px 28px", display: "inline-block",
+              }}>
+                Solving: {winningTeam?.teamName || task?.teamName || "Winning Team"}
+              </span>
+              {currentQuestion && (
+                <span style={{
+                  fontFamily: F.heading, fontWeight: 700, fontSize: "clamp(1rem, 2vw, 1.4rem)",
+                  color: C.success, backgroundColor: `${C.success}15`, border: `1px solid ${C.success}40`,
+                  borderRadius: tokens.radius.full, padding: "4px 20px", display: "inline-block",
+                }}>
+                  Reward: +{currentQuestion.reward} Points
+                </span>
+              )}
+            </motion.div>
+            <TaskDisplay timeLeft={centralTimeLeft} ended={taskEnded} paused={taskPaused} />
+            {activeImage && <QuestionImage imagePath={activeImage} />}
           </div>
         )}
 
-        {/* TASK RUNNING STATE */}
-        {displayState === "task" && task && (
+        {/* ENDED STATE (Winner OR No Winner) */}
+        {displayState === "ended" && (
           <div style={stage}>
-            <TaskDisplay timeLeft={taskTimer} ended={taskEnded} paused={taskPaused} />
-            {questionImage && <QuestionImage imagePath={questionImage} />}
+            {winner ? (
+              <WinnerDisplay teamName={winner.teamName} bid={winner.bid} />
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, ease: EASE.out }}
+                style={{ textAlign: "center" }}
+              >
+                <div style={{
+                  fontFamily: F.heading, fontWeight: 900,
+                  fontSize: "clamp(3.5rem, 10vw, 7rem)",
+                  color: C.danger, marginBottom: "16px",
+                }}>
+                  No Winner
+                </div>
+                <div style={{
+                  fontFamily: F.body, fontSize: "clamp(1.2rem, 2.5vw, 1.8rem)",
+                  color: "#94A3B8",
+                }}>
+                  60s bidding timer expired with 0 bids
+                </div>
+              </motion.div>
+            )}
           </div>
         )}
 
-        {/* RESULT STATE */}
-        {displayState === "result" && task && (
+        {/* RESULT STATE (Pass / Fail recorded) */}
+        {displayState === "result" && (
           <div style={stage}>
             <motion.div
               initial={{ opacity: 0, scale: 0.6 }}
               animate={
-                task.result === "pass"
+                (lastResult?.result || task?.result) === "pass"
                   ? {
                       opacity: 1,
                       scale: [0.6, 1.1, 1],
@@ -508,13 +686,13 @@ export default function LiveAuctionScreen() {
               style={{
                 fontFamily: F.heading, fontWeight: 900,
                 fontSize: "clamp(5rem, 15vw, 12rem)",
-                color: task.result === "pass" ? C.success : C.danger,
+                color: (lastResult?.result || task?.result) === "pass" ? C.success : C.danger,
                 letterSpacing: "0.1em",
                 borderRadius: tokens.radius.xl,
                 padding: "16px 32px",
               }}
             >
-              {task.result === "pass" ? "PASS" : "FAIL"}
+              {(lastResult?.result || task?.result) === "pass" ? "PASS" : "FAIL"}
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 8 }}
@@ -526,7 +704,7 @@ export default function LiveAuctionScreen() {
                 color: "#94A3B8", marginTop: "16px",
               }}
             >
-              {task.teamName}
+              {lastResult?.teamName || task?.teamName || ""}
             </motion.div>
           </div>
         )}

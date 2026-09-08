@@ -62,8 +62,35 @@ export interface AuctionConfig {
   duration: number; // seconds
 }
 
-// ---- Phase / Task ----
-export type GamePhase = "idle" | "auction" | "task";
+// ---- Phase / Task / State Model ----
+export type GamePhase = "idle" | "bidding" | "main_task" | "ended";
+
+export interface QuestionManifestItem {
+  id: string;
+  image: string;
+  reward: number;
+  time: number; // in seconds
+  used?: boolean;
+}
+
+export interface TimestampTimer {
+  startTime: number;
+  duration: number; // in seconds
+  remaining: number; // in seconds
+  isRunning: boolean;
+  label?: string;
+}
+
+export interface GameState {
+  phase: GamePhase;
+  currentQuestion: QuestionManifestItem | null;
+  currentBid: number;
+  winningTeam: { teamId: string; teamName: string } | null;
+  biddingTimer: TimestampTimer | null;
+  mainTaskTimer: TimestampTimer | null;
+  explicitTimer: TimestampTimer | null;
+  sideTaskTimer?: TimestampTimer | null;
+}
 
 export interface Task {
   taskId: string;
@@ -101,12 +128,19 @@ export interface TaskResultEvent {
   coinsDeducted: number; // fail only
 }
 
+export interface RenderedQuestion {
+  rendered_html: string;
+  reward_points: number;
+  time_limit: number;
+}
+
 // ---- Socket Events: Client -> Server ----
 export interface ClientEvents {
   "client:register": (data: TeamRegistration, cb: (res: RegisterResponse) => void) => void;
   "client:reconnect": (data: { sessionToken: string }, cb: (res: ReconnectResponse) => void) => void;
   "client:place_bid": (data: { teamId: string; auctionId: string; increment: number }, cb: (res: BidResponse) => void) => void;
   "client:get_scoreboard": (cb: (res: ScoreboardResponse) => void) => void;
+  "client:get_game_state": (cb: (res: { success: boolean; gameState?: GameState; error?: string }) => void) => void;
   "admin:submit_result": (
     data: { taskId: string; result: TaskResultDecision; rewardPoints?: number },
     cb: (res: ResultResponse) => void
@@ -166,17 +200,82 @@ export interface ClientEvents {
     data: { theme: string },
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
+  // Phase & Transition controls
+  "admin:start_auction": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:select_question": (
+    data: { questionId: string },
+    cb: (res: { success: boolean; question?: QuestionManifestItem; error?: string }) => void
+  ) => void;
+  "admin:get_manifest": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; questions: QuestionManifestItem[]; currentQuestion: QuestionManifestItem | null; error?: string }) => void
+  ) => void;
+  "admin:pass_task": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:fail_task": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:end_failed_task": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:assign_fallback": (
+    data: { teamId: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:side_timer_start": (
+    data: { duration?: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:side_timer_pause": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:side_timer_adjust": (
+    data: { seconds: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:explicit_timer_start": (
+    data: { duration?: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:explicit_timer_pause": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:explicit_timer_adjust": (
+    data: { seconds: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:explicit_timer_stop": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:end_round": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
 }
 
 // ---- Socket Events: Server -> Client ----
 export interface ServerEvents {
+  "phase:changed": (data: GameState) => void;
+  "timer:main:start": (data: { startTime: number; duration: number; remaining: number }) => void;
+  "timer:side:start": (data: { startTime: number; duration: number; remaining: number }) => void;
+  "timer:explicit:start": (data: { startTime: number; duration: number; remaining: number }) => void;
   "auction:started": (auction: Auction) => void;
-  "auction:bid_update": (data: { auctionId: string; bid: Bid; teamName: string; increment: number }) => void;
+  "auction:bid_update": (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
   "auction:timer": (data: { auctionId: string; remaining: number }) => void;
-  "auction:ended": (data: { auctionId: string; winner: Team | null; winningBid: number | null }) => void;
+  "auction:ended": (data: { auctionId?: string; winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "auction:cleared": () => void;
   "task:assigned": (task: Task) => void;
-  "task:started": (data: { time_limit: number; endAt: number; taskId?: string }) => void;
+  "task:started": (data: { time_limit: number; endAt?: number; taskId?: string; teamName?: string; reward?: number; questionImage?: string }) => void;
   "task:timer": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "task:ended": (data: { taskId: string }) => void;
   "task:result": (data: TaskResultEvent) => void;
@@ -185,8 +284,18 @@ export interface ServerEvents {
   "task:resumed": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "question:active": (data: QuestionPayload) => void;
   "question:selected": (data: QuestionPayload) => void;
-  "question:image_set": (data: { imagePath: string }) => void;
-  "timer:update": (data: { duration: number; endAt: number | null; isRunning: boolean; timeLeft: number }) => void;
+  "question:preview": (data: RenderedQuestion & { questionId?: string }) => void;
+  "question:image_set": (data: { imagePath: string; question?: QuestionManifestItem }) => void;
+  "timer:update": (data: {
+    biddingTimer?: TimestampTimer | null;
+    mainTaskTimer?: TimestampTimer | null;
+    explicitTimer?: TimestampTimer | null;
+    sideTaskTimer?: TimestampTimer | null;
+    duration?: number;
+    endAt?: number | null;
+    isRunning?: boolean;
+    timeLeft?: number;
+  }) => void;
   // Sound trigger events (frontend plays sounds on these)
   "sound:auction_started": () => void;
   "sound:auction_ended": () => void;
