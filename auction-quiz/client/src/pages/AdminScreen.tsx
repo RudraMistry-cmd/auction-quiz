@@ -576,9 +576,8 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         alignItems: "center",
       }}>
       <div style={styles.header}>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-          <BrandHeader variant="admin" />
-          <h1 style={styles.title}>Admin Control Panel</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+          <BrandHeader variant="left" subtitle="CONTROL PANEL" style={{ marginBottom: 0 }} />
           {isAdminVerified && (
             <span style={styles.verifiedBadge}>Host Verified</span>
           )}
@@ -1575,7 +1574,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: "32px",
+    marginBottom: "24px",
   },
   title: {
     fontSize: "1.5rem",

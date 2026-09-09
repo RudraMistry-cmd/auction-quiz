@@ -6,6 +6,7 @@ import AdminScreen from "./pages/AdminScreen";
 import DisplayScreen from "./pages/DisplayScreen";
 import LiveAuctionScreen from "./pages/LiveAuctionScreen";
 import ScoreboardScreen from "./pages/ScoreboardScreen";
+import { BrandHeader } from "./components/BrandHeader";
 import { colors, fontFamily } from "./theme";
 import "./App.css";
 
@@ -65,7 +66,7 @@ function NotFound() {
 function DisplayChooser() {
   return (
     <div style={styles.home}>
-      <h1 style={styles.homeTitle}>Projector Displays</h1>
+      <BrandHeader variant="centered" subtitle="PROJECTOR DISPLAYS" />
       <div style={styles.links}>
         <Link to="/display/live" style={styles.link}>Display 1 — Live Auction</Link>
         <Link to="/display/scores" style={styles.link}>Display 2 — Scoreboard</Link>
@@ -77,7 +78,7 @@ function DisplayChooser() {
 function Home() {
   return (
     <div style={styles.home}>
-      <h1 style={styles.homeTitle}>Auction Quiz</h1>
+      <BrandHeader variant="centered" showTagline />
       <div style={styles.links}>
         <Link to="/team" style={styles.link}>Team</Link>
         <Link to="/display/live" style={styles.link}>Display 1 — Live</Link>

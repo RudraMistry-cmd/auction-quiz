@@ -1,89 +1,189 @@
-import { tokens as T } from "../design-system";
+import React, { useState, useEffect } from "react";
+import { BRAND } from "../design-system";
 
-type BrandVariant = "live" | "scoreboard" | "admin" | "team";
+export type Variant = "centered" | "left" | "compact" | "live" | "scoreboard" | "admin" | "team";
 
-interface BrandHeaderProps {
-  variant?: BrandVariant;
+export interface BrandHeaderProps {
+  variant?: Variant;
+  subtitle?: string;
   showTagline?: boolean;
+  inverted?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }
 
-const variants: Record<BrandVariant, { logoHeight: number; logoMaxWidth: number; titleSize: string; subtitleSize: string; justify: string }> = {
-  live: { logoHeight: 80, logoMaxWidth: 160, titleSize: "clamp(2rem, 4vw, 3.5rem)", subtitleSize: "clamp(0.8rem, 1.2vw, 1.1rem)", justify: "center" },
-  scoreboard: { logoHeight: 70, logoMaxWidth: 140, titleSize: "clamp(1.5rem, 3vw, 2.5rem)", subtitleSize: "clamp(0.7rem, 1vw, 0.95rem)", justify: "center" },
-  admin: { logoHeight: 40, logoMaxWidth: 80, titleSize: "1.1rem", subtitleSize: "0.7rem", justify: "flex-start" },
-  team: { logoHeight: 32, logoMaxWidth: 64, titleSize: "0.9rem", subtitleSize: "0.65rem", justify: "flex-start" },
+interface VariantConfig {
+  direction: "row" | "column";
+  align: string;
+  justify: string;
+  logoSize: number;
+  textSize: string;
+  gap: string;
+  marginBottom: string;
+}
+
+const variantMap: Record<"centered" | "left" | "compact", VariantConfig> = {
+  centered: {
+    direction: "column",
+    align: "center",
+    justify: "center",
+    logoSize: 72,
+    textSize: "clamp(32px, 4vw, 38px)",
+    gap: "10px",
+    marginBottom: "20px",
+  },
+  left: {
+    direction: "row",
+    align: "center",
+    justify: "flex-start",
+    logoSize: 44,
+    textSize: "22px",
+    gap: "10px",
+    marginBottom: "16px",
+  },
+  compact: {
+    direction: "row",
+    align: "center",
+    justify: "flex-start",
+    logoSize: 30,
+    textSize: "15px",
+    gap: "8px",
+    marginBottom: "0px",
+  },
 };
 
-export function BrandHeader({ variant = "admin", showTagline = false, className }: BrandHeaderProps) {
-  const v = variants[variant];
+export function BrandHeader({
+  variant = "centered",
+  subtitle,
+  showTagline = false,
+  inverted = false,
+  className,
+  style,
+}: BrandHeaderProps) {
+  const [logoError, setLogoError] = useState(false);
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+
+  // Normalize legacy variant names
+  const canonical: "centered" | "left" | "compact" =
+    variant === "live" || variant === "scoreboard"
+      ? "centered"
+      : variant === "admin"
+      ? "left"
+      : variant === "team"
+      ? "compact"
+      : variant;
+
+  // Responsive small screen detection: auto-switch to compact on mobile
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(max-width: 640px)");
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => {
+      setIsSmallScreen(e.matches);
+    };
+    handler(mql);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
+  const activeVariant: "centered" | "left" | "compact" =
+    isSmallScreen && canonical === "centered" ? "compact" : canonical;
+
+  const cfg = variantMap[activeVariant];
 
   return (
-    <div className={className} style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: v.justify,
-      gap: "12px",
-      padding: variant === "live" ? "24px 0 8px" : "8px 0",
-      animation: "brandFadeIn 0.6s ease-out",
-    }}>
-      <img
-        src="/assets/logo.png"
-        alt="Bid for C"
-        style={{
-          height: `${v.logoHeight}px`,
-          maxWidth: `${v.logoMaxWidth}px`,
-          objectFit: "contain",
-          filter: variant === "live" ? "drop-shadow(0 0 12px rgba(11,60,93,0.35))" : "none",
-          transition: "filter 0.3s ease",
-        }}
-      />
-      <div style={{
+    <div
+      className={className}
+      style={{
         display: "flex",
-        flexDirection: "column",
-        alignItems: variant === "live" || variant === "scoreboard" ? "center" : "flex-start",
-      }}>
-        <span style={{
-          fontFamily: T.font.heading,
-          fontSize: v.titleSize,
-          fontWeight: 700,
-          color: T.color.primary,
-          letterSpacing: variant === "live" || variant === "scoreboard" ? "0.08em" : "normal",
-          textTransform: (variant === "live" || variant === "scoreboard") ? "uppercase" : "none",
-          lineHeight: 1.1,
-        }}>
-          BID FOR C
-        </span>
-        {variant === "scoreboard" && (
-          <span style={{
-            fontFamily: T.font.body,
-            fontSize: v.subtitleSize,
-            color: T.color.muted,
-            letterSpacing: "0.05em",
+        flexDirection: cfg.direction,
+        alignItems: cfg.align,
+        justifyContent: cfg.justify,
+        gap: cfg.gap,
+        marginBottom: style?.marginBottom !== undefined ? style.marginBottom : cfg.marginBottom,
+        animation: "fadeUp 0.4s ease forwards",
+        userSelect: "none",
+        ...style,
+      }}
+    >
+      {/* Event Logo (Image) */}
+      {!logoError && (
+        <img
+          src={BRAND.logo}
+          alt={BRAND.name}
+          onError={() => setLogoError(true)}
+          style={{
+            height: `${cfg.logoSize}px`,
+            width: "auto",
+            maxWidth: `${cfg.logoSize * 2.2}px`,
+            objectFit: "contain",
+            filter: inverted
+              ? "drop-shadow(0 0 16px rgba(212,175,55,0.4))"
+              : "drop-shadow(0 2px 8px rgba(212,175,55,0.25))",
+            transition: "filter 0.3s ease, transform 0.3s ease",
+            flexShrink: 0,
+          }}
+        />
+      )}
+
+      {/* Event Name & Optional Subtitle */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: activeVariant === "centered" ? "center" : "flex-start",
+          textAlign: activeVariant === "centered" ? "center" : "left",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-heading, 'Poppins', 'Inter', sans-serif)",
+            fontSize: cfg.textSize,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            color: inverted ? "#FFFFFF" : "var(--color-primary, #0B3C5D)",
             textTransform: "uppercase",
-          }}>
-            LEADERBOARD
+            lineHeight: 1.1,
+            whiteSpace: "nowrap",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.28em",
+          }}
+        >
+          <span>BID FOR</span>
+          <span style={{ color: "var(--color-accent, #D4AF37)" }}>C</span>
+        </span>
+
+        {subtitle && (
+          <span
+            style={{
+              fontFamily: "var(--font-body, 'Inter', sans-serif)",
+              fontSize: activeVariant === "centered" ? "0.85rem" : "0.75rem",
+              color: inverted ? "rgba(255, 255, 255, 0.75)" : "var(--color-muted, #64748B)",
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+              marginTop: "4px",
+              fontWeight: 600,
+            }}
+          >
+            {subtitle}
           </span>
         )}
       </div>
+
       {showTagline && (
-        <div style={{
-          position: "absolute",
-          bottom: "24px",
-          left: 0,
-          right: 0,
-          textAlign: "center",
-          fontFamily: T.font?.body || "'Inter', sans-serif",
-          fontSize: "clamp(0.85rem, 1.2vw, 1.1rem)",
-          color: "#475569",
-          letterSpacing: "0.04em",
-          opacity: 0.85,
-        }}>
+        <div
+          style={{
+            fontFamily: "var(--font-body, 'Inter', sans-serif)",
+            fontSize: "clamp(0.85rem, 1.2vw, 1.05rem)",
+            color: inverted ? "rgba(255, 255, 255, 0.7)" : "var(--color-muted, #64748B)",
+            letterSpacing: "0.05em",
+            marginTop: "6px",
+            fontStyle: "italic",
+          }}
+        >
           Bid Smart. Code Fast. Win Big.
         </div>
       )}
     </div>
   );
 }
-
-/* Keyframes injected once via <style> in App or index */

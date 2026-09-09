@@ -28,7 +28,7 @@ function Header({ connected }: { connected: boolean }) {
       <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: "60px" }} />
 
       <div style={{ display: "flex", justifyContent: "center", flex: 1 }}>
-        <BrandHeader variant="scoreboard" />
+        <BrandHeader variant="centered" subtitle="LEADERBOARD" style={{ marginBottom: 0 }} />
       </div>
 
       <div style={{

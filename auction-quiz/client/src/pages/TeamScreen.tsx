@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
 import { tokens } from "../design-system";
+import { BrandHeader } from "../components/BrandHeader";
 import TaskTimer from "../components/TaskTimer";
 import type { Team, Auction, Bid, TaskResultEvent } from "../shared/types";
 
@@ -13,6 +14,18 @@ interface TeamScreenProps {
 }
 
 /* ─── Sub-components ─── */
+
+function TeamHeaderBar({ teamName, onLogout }: { teamName: string; onLogout: () => void }) {
+  return (
+    <div style={dashHeaderContainer}>
+      <div style={dashTopRow}>
+        <BrandHeader variant="compact" />
+        <button onClick={onLogout} style={btnGhost}>Logout</button>
+      </div>
+      <div style={dashTeamName}>{teamName}</div>
+    </div>
+  );
+}
 
 function DashboardCard({
   label,
@@ -438,18 +451,14 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
 
         {/* Header */}
         <header style={regHeader}>
-          <img src="/assets/logo.png" alt="Bid for C" style={{ height: "32px", objectFit: "contain" }} />
-          <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: "#FFFFFF", letterSpacing: "0.05em" }}>Bid for C</span>
+          <BrandHeader variant="compact" inverted />
         </header>
 
         {/* Main Content */}
         <div style={regContent}>
           {/* Left Side - Branding */}
           <div style={regLeft}>
-            <img src="/assets/logo.png" alt="Bid for C" style={{ height: "120px", objectFit: "contain", marginBottom: "24px", filter: "drop-shadow(0 0 20px rgba(212,175,55,0.3))" }} />
-            <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "clamp(2rem, 4vw, 3rem)", color: "#FFFFFF", marginBottom: "16px", letterSpacing: "0.05em" }}>
-              BID FOR C
-            </div>
+            <BrandHeader variant="centered" inverted style={{ marginBottom: "20px" }} />
             <p style={{ fontFamily: F.body, fontSize: "clamp(0.95rem, 1.5vw, 1.15rem)", color: "#94A3B8", lineHeight: 1.7, maxWidth: "400px", marginBottom: "32px" }}>
               Compete in a fast-paced coding auction.
               Bid strategically, solve under pressure,
@@ -588,10 +597,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <div style={dashHeader}>
-          <div style={dashTeamName}>{team.teamName}</div>
-          <button onClick={onLogout} style={btnGhost}>Logout</button>
-        </div>
+        <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -660,10 +666,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <div style={dashHeader}>
-          <div style={dashTeamName}>{team.teamName}</div>
-          <button onClick={onLogout} style={btnGhost}>Logout</button>
-        </div>
+        <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -694,10 +697,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <div style={dashHeader}>
-          <div style={dashTeamName}>{team.teamName}</div>
-          <button onClick={onLogout} style={btnGhost}>Logout</button>
-        </div>
+        <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -742,10 +742,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
       <FeedbackToast message={bidMessage} />
 
       {/* Team Header */}
-      <div style={dashHeader}>
-        <div style={dashTeamName}>{team.teamName}</div>
-        <button onClick={onLogout} style={btnGhost}>Logout</button>
-      </div>
+      <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
 
       {/* Timer */}
       <div style={{ marginBottom: "24px" }}>
@@ -873,16 +870,21 @@ const dashRoot: React.CSSProperties = {
   gap: "20px",
 };
 
-const dashHeader: React.CSSProperties = {
+const dashHeaderContainer: React.CSSProperties = {
+  display: "flex", flexDirection: "column", alignItems: "center",
+  width: "100%", maxWidth: "500px", marginBottom: "16px",
+};
+
+const dashTopRow: React.CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "space-between",
-  width: "100%", maxWidth: "500px", marginBottom: "8px",
+  width: "100%", marginBottom: "12px",
 };
 
 const dashTeamName: React.CSSProperties = {
   fontFamily: F.heading, fontWeight: 900,
-  fontSize: "clamp(2rem, 6vw, 3.5rem)",
+  fontSize: "clamp(1.75rem, 5vw, 2.75rem)",
   color: C.primary, letterSpacing: "0.03em",
-  lineHeight: 1,
+  lineHeight: 1.1, textAlign: "center",
 };
 
 const dashStatRow: React.CSSProperties = {

@@ -535,9 +535,7 @@ export default function LiveAuctionScreen() {
       )}
 
       {/* Brand Header */}
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: "16px" }}>
-        <BrandHeader variant="live" />
-      </div>
+      <BrandHeader variant="centered" />
 
       {/* Timer - Top Center (visible during bidding or manual timer; during task, TaskDisplay contains the timer) */}
       {showCentralTimer && displayState !== "task" && displayState !== "result" && displayState !== "ended" && (

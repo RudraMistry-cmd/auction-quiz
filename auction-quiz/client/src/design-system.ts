@@ -13,8 +13,13 @@
 import type { CSSProperties } from "react";
 
 /* ═══════════════════════════════════════════════════
-   Design Tokens (CSS Variables for runtime theming)
+   Branding Constants
    ═══════════════════════════════════════════════════ */
+
+export const BRAND = {
+  name: "BID FOR C",
+  logo: "/assets/logo.png",
+};
 
 export const tokens = {
   color: {
@@ -301,6 +306,7 @@ export function avatar(size: number = 36): CSSProperties {
 
 /** Shorthand namespace: `import { ds } from "../design-system"` */
 export const ds = {
+  BRAND,
   tokens,
   button,
   card,

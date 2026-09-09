@@ -3,6 +3,7 @@ import { getServerBase } from "../hooks/useSocket";
 import { useGamePhase } from "../hooks/useGamePhase";
 import TaskStage from "../components/TaskStage";
 import QuestionView from "../components/QuestionView";
+import { BrandHeader } from "../components/BrandHeader";
 import { colors, fontFamily, label, tabular } from "../theme";
 import type { Auction, Bid } from "../shared/types";
 
@@ -157,7 +158,7 @@ export default function DisplayScreen() {
   return (
     <div style={styles.container}>
       <div style={styles.topBar}>
-        <span style={styles.brand}></span>
+        <BrandHeader variant="compact" />
         <span>{auction ? `Auction #${auction.seqNo}` : "Standby"}</span>
         <span style={styles.liveBadge}>
           <span
