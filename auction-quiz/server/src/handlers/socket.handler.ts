@@ -39,6 +39,24 @@ export function setupSocketHandlers(io: Server) {
     io.emit("manual_timer:update", s);
   };
 
+  let autoResetTimer: NodeJS.Timeout | null = null;
+  const scheduleAutoReset = () => {
+    if (autoResetTimer) clearTimeout(autoResetTimer);
+    autoResetTimer = setTimeout(async () => {
+      try {
+        stateManager.resetRound();
+        auctionService.resetAuction();
+        taskService.resetTask();
+        io.emit("system:reset");
+        io.emit("phase:changed", stateManager.getGameState());
+        await broadcastFullState();
+        console.log("[AutoReset] system:reset triggered: round returned to idle");
+      } catch (e) {
+        console.error("[AutoReset] Failed to execute system:reset:", e);
+      }
+    }, 1800);
+  };
+
   const getFullSyncState = async (): Promise<FullSyncState> => {
     const gameState = stateManager.getGameState();
     const timers = timerEngineService.getTimers();
@@ -300,8 +318,14 @@ export function setupSocketHandlers(io: Server) {
           rewardGranted: r.appliedReward,
           coinsDeducted: r.appliedDeduction,
         });
+        io.emit("result:declared", {
+          result: r.task.result as "pass" | "fail",
+          teamName: r.team.teamName,
+          points: r.appliedReward,
+        });
         io.emit("sound:task_result", { result: r.task.result as "pass" | "fail" });
         io.emit("scoreboard:updated", { teams: scoreboard });
+        scheduleAutoReset();
         cb({ success: true, task: r.task as any, team: r.team as any });
         console.log(`[Task] Result recorded: ${r.task.taskId} → ${r.task.result} (${r.team.teamName})`);
       } catch (err: any) {
@@ -700,12 +724,18 @@ export function setupSocketHandlers(io: Server) {
           rewardGranted: r.appliedReward,
           coinsDeducted: 0,
         });
+        io.emit("result:declared", {
+          result: "pass",
+          teamName: r.team.teamName,
+          points: r.appliedReward,
+        });
         io.emit("sound:task_result", { result: "pass" });
         io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
         io.emit("team:update", { team: r.team });
         io.emit("phase:changed", stateManager.getGameState());
         await broadcastFullState();
+        scheduleAutoReset();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Pass failed" });
@@ -716,11 +746,27 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
-        await taskService.failWinningTask();
+        const r = await taskService.failWinningTask();
+        io.emit("task:result", {
+          taskId: r.task.taskId,
+          result: "fail",
+          teamId: r.winningTeam.teamId,
+          teamName: r.winningTeam.teamName,
+          coins: r.winningTeam.bid_coins,
+          rewardPoints: r.winningTeam.reward_points,
+          rewardGranted: 0,
+          coinsDeducted: 0,
+        });
+        io.emit("result:declared", {
+          result: "fail",
+          teamName: r.winningTeam.teamName,
+          points: 0,
+        });
         io.emit("sound:task_result", { result: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
+        scheduleAutoReset();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Fail failed" });
@@ -731,10 +777,16 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
-        await taskService.endFailedTaskNormally();
+        const r = await taskService.endFailedTaskNormally();
+        io.emit("result:declared", {
+          result: "fail",
+          teamName: (r.task as any)?.teamName || "Winning Team",
+          points: 0,
+        });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
+        scheduleAutoReset();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "End failed task failed" });
@@ -761,6 +813,11 @@ export function setupSocketHandlers(io: Server) {
           rewardGranted: r.rewardPoints,
           coinsDeducted: 0,
         });
+        io.emit("result:declared", {
+          result: "pass",
+          teamName: r.fallbackTeam.teamName,
+          points: r.rewardPoints,
+        });
         io.emit("sound:task_result", { result: "pass" });
         io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
@@ -768,10 +825,23 @@ export function setupSocketHandlers(io: Server) {
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
+        scheduleAutoReset();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Assign fallback failed" });
       }
+    });
+
+    socket.on("admin:reset_system", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      if (autoResetTimer) clearTimeout(autoResetTimer);
+      stateManager.resetRound();
+      auctionService.resetAuction();
+      taskService.resetTask();
+      io.emit("system:reset");
+      io.emit("phase:changed", stateManager.getGameState());
+      await broadcastFullState();
+      cb?.({ success: true });
     });
 
     // Explicit Timer Handlers (admin-controlled optional timer, does not mutate phase)
@@ -935,7 +1005,6 @@ export function setupSocketHandlers(io: Server) {
       resetManualTimer();
 
       const auction = await auctionService.startAuction({ ...AUCTION_CONFIG, ...opts });
-      stateManager.beginAuction(auction.auctionId);
 
       io.emit("auction:started", auction);
       io.emit("auction:start", auction);
@@ -971,10 +1040,15 @@ export function setupSocketHandlers(io: Server) {
               const dynamicTime = curQ.time;
               const mainTimer = timerEngineService.startMainTask(dynamicTime, () => {
                 io.emit("task:ended", { taskId: task.taskId });
+                io.emit("task:end", { taskId: task.taskId });
               });
 
               io.emit("auction:ended", {
                 auctionId: result.auction.auctionId,
+                winner: { teamId: result.winner.teamId, teamName: result.winner.teamName },
+                winningBid: result.winningBid,
+              });
+              io.emit("auction:win", {
                 winner: { teamId: result.winner.teamId, teamName: result.winner.teamName },
                 winningBid: result.winningBid,
               });
@@ -994,6 +1068,11 @@ export function setupSocketHandlers(io: Server) {
                 teamName: task.teamName,
                 reward: curQ.reward,
                 questionImage: curQ.image,
+              });
+              io.emit("task:start", {
+                taskId: task.taskId,
+                teamName: task.teamName,
+                time_limit: dynamicTime,
               });
               io.emit("timer:main:start", {
                 startTime: mainTimer.startTime,

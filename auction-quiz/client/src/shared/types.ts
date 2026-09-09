@@ -238,6 +238,10 @@ export interface ClientEvents {
     data: Record<string, never>,
     cb: (res: { success: boolean; questions: QuestionManifestItem[]; currentQuestion: QuestionManifestItem | null; error?: string }) => void
   ) => void;
+  "admin:reset_system": (
+    data: Record<string, never>,
+    cb?: (res: { success: boolean; error?: string }) => void
+  ) => void;
   "admin:pass_task": (
     data: Record<string, never>,
     cb: (res: { success: boolean; error?: string }) => void
@@ -300,13 +304,18 @@ export interface ServerEvents {
   "bid:update"?: (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
   "auction:timer": (data: { auctionId: string; remaining: number }) => void;
   "auction:ended": (data: { auctionId?: string; winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
+  "auction:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "bid:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "auction:cleared": () => void;
   "task:assigned": (task: Task) => void;
   "task:started": (data: { time_limit: number; endAt?: number; taskId?: string; teamName?: string; reward?: number; questionImage?: string }) => void;
+  "task:start"?: (data?: any) => void;
   "task:timer": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "task:ended": (data: { taskId: string }) => void;
+  "task:end"?: (data?: any) => void;
   "task:result": (data: TaskResultEvent) => void;
+  "result:declared"?: (data: { result: "pass" | "fail"; teamName: string; points?: number }) => void;
+  "system:reset"?: () => void;
   "scoreboard:updated": (data: { teams: ScoreboardResponse["teams"] }) => void;
   "scoreboard:update": (data: { teams: ScoreboardResponse["teams"] }) => void;
   "team:update": (data: { team: Team }) => void;

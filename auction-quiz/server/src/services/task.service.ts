@@ -574,6 +574,12 @@ export class TaskService {
     };
   }
 
+  resetTask() {
+    timerEngineService.stopMainTask();
+    timerEngineService.stopExplicitTimer();
+    this.activeTask = null;
+  }
+
   /**
    * Boot reconciliation: a restart kills the in-memory task timer.
    * Stale 'active' tasks become 'ended' — the admin can still resolve

@@ -352,6 +352,12 @@ export class AuctionService {
     }
   }
 
+  resetAuction() {
+    this.stopTimer();
+    this.activeAuction = null;
+    this.lastBidTime.clear();
+  }
+
   async getRecentBids(auctionId: string, limit: number = 10): Promise<Bid[]> {
     const db = await getDb();
     return queryAll(db, `

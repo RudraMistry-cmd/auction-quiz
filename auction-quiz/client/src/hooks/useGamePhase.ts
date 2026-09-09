@@ -466,6 +466,26 @@ export function useGamePhase() {
       }
     };
 
+    const handleSystemReset = () => {
+      lastEventTime.current = Date.now();
+      setPhase("idle");
+      setCurrentBid(0);
+      setLeadingTeam(null);
+      setWinningTeam(null);
+      setTask(null);
+      setTaskTimer(0);
+      setTaskEnded(false);
+      setTaskPaused(false);
+      setLastResult(null);
+      setActiveAuction(null);
+      setCurrentQuestion(null);
+      setActiveQuestion(null);
+      setBiddingTimer(null);
+      setMainTaskTimer(null);
+      setExplicitTimer(null);
+      setSideTaskTimer(null);
+    };
+
     socket.on("state:full", onFullState);
     socket.on("phase:changed", handlePhaseChanged);
     socket.on("timer:main:start", handleTimerMainStart);
@@ -477,6 +497,7 @@ export function useGamePhase() {
     socket.on("auction:bid_update", handleBidUpdate);
     socket.on("bid:update" as any, handleBidUpdate);
     socket.on("auction:ended", handleAuctionEnded);
+    socket.on("auction:win" as any, handleAuctionEnded);
     socket.on("bid:win" as any, handleAuctionEnded);
     socket.on("scoreboard:updated", handleScoreboardUpdate);
     socket.on("scoreboard:update" as any, handleScoreboardUpdate);
@@ -485,11 +506,14 @@ export function useGamePhase() {
     socket.on("question:image_set", handleQuestionImageSet);
     socket.on("task:assigned", handleAssigned);
     socket.on("task:started", handleTaskStarted);
+    socket.on("task:start" as any, handleTaskStarted);
     socket.on("task:timer", handleTaskTimer);
     socket.on("task:ended", handleTaskEnded);
+    socket.on("task:end" as any, handleTaskEnded);
     socket.on("task:paused", handlePaused);
     socket.on("task:resumed", handleResumed);
     socket.on("task:result", handleTaskResult);
+    socket.on("system:reset" as any, handleSystemReset);
 
     return () => {
       socket.off("state:full", onFullState);
@@ -503,6 +527,7 @@ export function useGamePhase() {
       socket.off("auction:bid_update", handleBidUpdate);
       socket.off("bid:update" as any, handleBidUpdate);
       socket.off("auction:ended", handleAuctionEnded);
+      socket.off("auction:win" as any, handleAuctionEnded);
       socket.off("bid:win" as any, handleAuctionEnded);
       socket.off("scoreboard:updated", handleScoreboardUpdate);
       socket.off("scoreboard:update" as any, handleScoreboardUpdate);
@@ -511,11 +536,14 @@ export function useGamePhase() {
       socket.off("question:image_set", handleQuestionImageSet);
       socket.off("task:assigned", handleAssigned);
       socket.off("task:started", handleTaskStarted);
+      socket.off("task:start" as any, handleTaskStarted);
       socket.off("task:timer", handleTaskTimer);
       socket.off("task:ended", handleTaskEnded);
+      socket.off("task:end" as any, handleTaskEnded);
       socket.off("task:paused", handlePaused);
       socket.off("task:resumed", handleResumed);
       socket.off("task:result", handleTaskResult);
+      socket.off("system:reset" as any, handleSystemReset);
     };
   }, [socket, connected, handleFullState]);
 
