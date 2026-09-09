@@ -50,6 +50,7 @@ export function useGamePhase() {
   const [mainTaskTimer, setMainTaskTimer] = useState<TimestampTimer | null>(null);
   const [sideTaskTimer, setSideTaskTimer] = useState<TimestampTimer | null>(null);
   const [explicitTimer, setExplicitTimer] = useState<TimestampTimer | null>(null);
+  const [extraTimer, setExtraTimer] = useState<TimestampTimer | null>(null);
 
   const [task, setTask] = useState<(Task & { timeLeft?: number }) | null>(null);
   const [taskTimer, setTaskTimer] = useState(0);
@@ -92,6 +93,7 @@ export function useGamePhase() {
     if (full.scoreboard) setScoreboard(full.scoreboard);
     if (full.timers) {
       if (full.timers.bidding !== undefined) setBiddingTimer(full.timers.bidding);
+      if (full.timers.auctionTimer !== undefined) setBiddingTimer(full.timers.auctionTimer);
       if (full.timers.main !== undefined) {
         setMainTaskTimer(full.timers.main);
         if (full.timers.main) {
@@ -100,8 +102,21 @@ export function useGamePhase() {
           if (rem <= 0 && full.timers.main.duration > 0) setTaskEnded(true);
         }
       }
+      if (full.timers.taskTimer !== undefined) {
+        setMainTaskTimer(full.timers.taskTimer);
+        if (full.timers.taskTimer) {
+          const rem = computeRemaining(full.timers.taskTimer);
+          setTaskTimer(rem);
+          if (rem <= 0 && full.timers.taskTimer.duration > 0) setTaskEnded(true);
+        }
+      }
       if (full.timers.explicit !== undefined) setExplicitTimer(full.timers.explicit);
       if (full.timers.side !== undefined) setSideTaskTimer(full.timers.side);
+      if (full.timers.extraTimer !== undefined) {
+        setExtraTimer(full.timers.extraTimer);
+        setExplicitTimer(full.timers.extraTimer);
+        setSideTaskTimer(full.timers.extraTimer);
+      }
     }
     if ((full as any).upcomingQuestion !== undefined) setUpcomingQuestion((full as any).upcomingQuestion);
     if ((full as any).activeQuestion !== undefined) setActiveQuestion((full as any).activeQuestion);
@@ -222,6 +237,10 @@ export function useGamePhase() {
         const rem = computeRemaining(explicitTimer);
         setExplicitTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
         setSideTaskTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
+        setExtraTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
+      } else if (extraTimer?.isRunning && extraTimer.startTime) {
+        const rem = computeRemaining(extraTimer);
+        setExtraTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
       }
     }, 250);
 
@@ -236,6 +255,9 @@ export function useGamePhase() {
     explicitTimer?.isRunning,
     explicitTimer?.startTime,
     explicitTimer?.duration,
+    extraTimer?.isRunning,
+    extraTimer?.startTime,
+    extraTimer?.duration,
   ]);
 
   // Live socket event listeners
@@ -263,40 +285,75 @@ export function useGamePhase() {
       if (data.sideTaskTimer !== undefined) setSideTaskTimer(data.sideTaskTimer);
     };
 
-    const handleTimerMainStart = (data: { startTime: number; duration: number; remaining: number }) => {
+    const handleTimerAuctionStart = (data: { startTime: number; duration: number; remaining: number }) => {
+      lastEventTime.current = Date.now();
+      setBiddingTimer({
+        startTime: data.startTime,
+        duration: data.duration,
+        remaining: data.remaining,
+        isRunning: true,
+        label: "Auction",
+      });
+    };
+
+    const handleTimerMainStart = (data: { startTime: number; duration: number; remaining: number; label?: string }) => {
       lastEventTime.current = Date.now();
       setMainTaskTimer({
         startTime: data.startTime,
         duration: data.duration,
         remaining: data.remaining,
         isRunning: true,
-        label: "Main Task",
+        label: data.label || "Task Time Remaining",
       });
       setTaskTimer(data.remaining);
       setTaskEnded(false);
       setTaskPaused(false);
     };
 
-    const handleTimerExplicitStart = (data: { startTime: number; duration: number; remaining: number }) => {
+    const handleTimerTaskStart = (data: { startTime: number; duration: number; remaining: number; label?: string }) => {
+      handleTimerMainStart(data);
+    };
+
+    const handleTimerExtraStart = (data: { startTime: number; duration: number; remaining: number; label?: string }) => {
       lastEventTime.current = Date.now();
       const t: TimestampTimer = {
         startTime: data.startTime,
         duration: data.duration,
         remaining: data.remaining,
         isRunning: true,
-        label: "Open Challenge",
+        label: data.label || "Extra Timer",
       };
+      setExtraTimer(t);
       setExplicitTimer(t);
       setSideTaskTimer(t);
     };
 
-    const handleTimerSideStart = (data: { startTime: number; duration: number; remaining: number }) => {
-      handleTimerExplicitStart(data);
+    const handleTimerExplicitStart = (data: { startTime: number; duration: number; remaining: number; label?: string }) => {
+      handleTimerExtraStart(data);
+    };
+
+    const handleTimerSideStart = (data: { startTime: number; duration: number; remaining: number; label?: string }) => {
+      handleTimerExtraStart(data);
+    };
+
+    const handleTimerEnd = (data: { timerType: "auction" | "task" | "extra" }) => {
+      lastEventTime.current = Date.now();
+      if (data.timerType === "auction") {
+        setBiddingTimer((prev) => (prev ? { ...prev, isRunning: false, remaining: 0 } : null));
+      } else if (data.timerType === "task") {
+        setMainTaskTimer((prev) => (prev ? { ...prev, isRunning: false, remaining: 0 } : null));
+        setTaskEnded(true);
+      } else if (data.timerType === "extra") {
+        setExtraTimer((prev) => (prev ? { ...prev, isRunning: false, remaining: 0 } : null));
+        setExplicitTimer((prev) => (prev ? { ...prev, isRunning: false, remaining: 0 } : null));
+        setSideTaskTimer((prev) => (prev ? { ...prev, isRunning: false, remaining: 0 } : null));
+      }
     };
 
     const handleTimerUpdate = (data: any) => {
       lastEventTime.current = Date.now();
       if (data.biddingTimer !== undefined) setBiddingTimer(data.biddingTimer);
+      if (data.auctionTimer !== undefined) setBiddingTimer(data.auctionTimer);
       if (data.mainTaskTimer !== undefined) {
         setMainTaskTimer(data.mainTaskTimer);
         if (data.mainTaskTimer) {
@@ -305,9 +362,22 @@ export function useGamePhase() {
           if (rem <= 0) setTaskEnded(true);
         }
       }
+      if (data.taskTimer !== undefined) {
+        setMainTaskTimer(data.taskTimer);
+        if (data.taskTimer) {
+          const rem = computeRemaining(data.taskTimer);
+          setTaskTimer(rem);
+          if (rem <= 0) setTaskEnded(true);
+        }
+      }
       if (data.explicitTimer !== undefined) setExplicitTimer(data.explicitTimer);
       if (data.sideTaskTimer !== undefined) setSideTaskTimer(data.sideTaskTimer);
-      if (data.timeLeft !== undefined && !data.mainTaskTimer) {
+      if (data.extraTimer !== undefined) {
+        setExtraTimer(data.extraTimer);
+        setExplicitTimer(data.extraTimer);
+        setSideTaskTimer(data.extraTimer);
+      }
+      if (data.timeLeft !== undefined && !data.mainTaskTimer && !data.taskTimer) {
         setTaskTimer(data.timeLeft);
         if (data.timeLeft <= 0) setTaskEnded(true);
       }
@@ -340,8 +410,9 @@ export function useGamePhase() {
         setWinningTeam({ teamId: data.winner.teamId, teamName: data.winner.teamName });
         setLeadingTeam(data.winner.teamName);
         if (data.winningBid != null) setCurrentBid(data.winningBid);
+        setPhase("post_bid_idle");
       } else {
-        setPhase("ended");
+        setPhase("idle");
         setWinningTeam(null);
         setLeadingTeam(null);
       }
@@ -484,6 +555,7 @@ export function useGamePhase() {
       setMainTaskTimer(null);
       setExplicitTimer(null);
       setSideTaskTimer(null);
+      setExtraTimer(null);
     };
 
     socket.on("state:full", onFullState);
@@ -491,6 +563,10 @@ export function useGamePhase() {
     socket.on("timer:main:start", handleTimerMainStart);
     socket.on("timer:side:start", handleTimerSideStart);
     socket.on("timer:explicit:start", handleTimerExplicitStart);
+    socket.on("timer:auction:start" as any, handleTimerAuctionStart);
+    socket.on("timer:task:start" as any, handleTimerTaskStart);
+    socket.on("timer:extra:start" as any, handleTimerExtraStart);
+    socket.on("timer:end" as any, handleTimerEnd);
     socket.on("timer:update", handleTimerUpdate);
     socket.on("auction:started", handleAuctionStarted);
     socket.on("auction:start" as any, handleAuctionStarted);
@@ -521,6 +597,10 @@ export function useGamePhase() {
       socket.off("timer:main:start", handleTimerMainStart);
       socket.off("timer:side:start", handleTimerSideStart);
       socket.off("timer:explicit:start", handleTimerExplicitStart);
+      socket.off("timer:auction:start" as any, handleTimerAuctionStart);
+      socket.off("timer:task:start" as any, handleTimerTaskStart);
+      socket.off("timer:extra:start" as any, handleTimerExtraStart);
+      socket.off("timer:end" as any, handleTimerEnd);
       socket.off("timer:update", handleTimerUpdate);
       socket.off("auction:started", handleAuctionStarted);
       socket.off("auction:start" as any, handleAuctionStarted);
@@ -560,6 +640,7 @@ export function useGamePhase() {
     mainTaskTimer,
     sideTaskTimer: sideTaskTimer || explicitTimer,
     explicitTimer: explicitTimer || sideTaskTimer,
+    extraTimer: extraTimer || explicitTimer,
     task,
     taskTimer,
     taskEnded,

@@ -145,6 +145,43 @@ function HeaderTimerZone({
     );
   }
 
+  if (phase === "post_bid_idle" && isWinner) {
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "6px 16px",
+        borderRadius: tokens.radius.md,
+        backgroundColor: `${C.accent}15`,
+        border: `2px solid ${C.accent}`,
+      }}>
+        <ClockIcon size={20} color={C.accent} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+          <span style={{
+            fontFamily: F.mono,
+            fontWeight: 900,
+            fontSize: "1.3rem",
+            color: C.accent,
+            lineHeight: 1,
+          }}>
+            STANDBY
+          </span>
+          <span style={{
+            fontSize: "0.6rem",
+            fontWeight: 800,
+            color: C.accent,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            marginTop: "2px",
+          }}>
+            AWAITING TIMER
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   // Idle / Inactive Timer Zone (No connection status here!)
   return (
     <div style={{
@@ -685,8 +722,8 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   // Strict Question Visibility Rules:
   // 1. Never in idle or ended states (even if admin picked question)
   // 2. Visible to all teams during "bidding"
-  // 3. Visible ONLY to the winning team during "main_task"
-  const showQuestion = (phase === "bidding" || (phase === "main_task" && isWinner)) && !!activeImage && !imgError;
+  // 3. Visible ONLY to the winning team during "post_bid_idle" & "main_task"
+  const showQuestion = (phase === "bidding" || ((phase === "main_task" || phase === "post_bid_idle") && isWinner)) && !!activeImage && !imgError;
 
   // Timers
   const activeBiddingTime = biddingTimer ? biddingTimer.remaining : timer;
@@ -703,9 +740,18 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   if (phase === "bidding") {
     statusMessage = isLeading ? "YOU ARE LEADING" : "AUCTION LIVE";
     statusColor = isLeading ? C.success : C.primary;
+  } else if (phase === "post_bid_idle") {
+    statusMessage = isWinner ? "AUCTION WON — STANDBY" : `${winnerName} won the bid`;
+    statusColor = isWinner ? C.accent : C.muted;
   } else if (phase === "main_task") {
     statusMessage = isWinner ? "SOLVE THE TASK!" : `${winnerName} is solving`;
     statusColor = isWinner ? C.accent : C.warning;
+  } else if (phase === "fallback_idle" || phase === "fallback_active") {
+    statusMessage = "FALLBACK ROUND (WATCH DISPLAY)";
+    statusColor = C.accent;
+  } else if (phase === "result_display") {
+    statusMessage = "VERDICT DECLARED";
+    statusColor = C.info;
   } else if (phase === "ended") {
     statusMessage = "ROUND COMPLETED";
     statusColor = C.info;
@@ -718,7 +764,15 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   let placeholderTitle = "Auction Standby";
   let placeholderDesc = "Questions will appear when the quiz master starts bidding.";
 
-  if (phase === "main_task") {
+  if (phase === "post_bid_idle") {
+    if (isWinner) {
+      placeholderTitle = "You Won the Auction!";
+      placeholderDesc = "Standby as the quiz master initiates your task timer.";
+    } else {
+      placeholderTitle = "Auction Ended";
+      placeholderDesc = `${winnerName} claimed this question. Stand by for the next round.`;
+    }
+  } else if (phase === "main_task") {
     if (isWinner) {
       placeholderTitle = "You Won the Auction!";
       placeholderDesc = "Solve the question shown and alert the admin when finished.";
@@ -726,6 +780,12 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
       placeholderTitle = "Task in Progress";
       placeholderDesc = `${winnerName} is attempting to solve the task. Stand by!`;
     }
+  } else if (phase === "fallback_idle" || phase === "fallback_active") {
+    placeholderTitle = "Fallback Opportunity";
+    placeholderDesc = "The question has opened up to other teams. Check the projector screen!";
+  } else if (phase === "result_display") {
+    placeholderTitle = "Round Concluded";
+    placeholderDesc = "Result has been recorded. Round is resetting...";
   } else if (phase === "ended") {
     placeholderTitle = "Round Concluded";
     placeholderDesc = "Points are recorded. Prepare for the next round.";
@@ -915,18 +975,32 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
                 />
               </div>
             </div>
-          ) : phase === "main_task" && !isWinner ? (
-            /* Non-winning teams during main_task */
+          ) : (phase === "main_task" || phase === "post_bid_idle") && !isWinner ? (
+            /* Non-winning teams during main_task or post_bid_idle */
             <div style={waitingSolveCard}>
               <div style={waitingSolveIconBox}>
                 <ClockIcon size={44} color={C.accent} />
               </div>
               <h2 style={waitingSolveTitle}>
-                {winnerName} is Solving
+                {winnerName} {phase === "post_bid_idle" ? "Won the Bid" : "is Solving"}
               </h2>
               <p style={waitingSolveText}>
-                The winning team has claimed this challenge and is working on the solution.
-                Stand by for the next auction round!
+                {phase === "post_bid_idle"
+                  ? `${winnerName} won the auction. Stand by as they prepare to solve.`
+                  : "The winning team has claimed this challenge and is working on the solution. Stand by for the next auction round!"}
+              </p>
+            </div>
+          ) : phase === "fallback_idle" || phase === "fallback_active" ? (
+            /* Fallback round display on team screen */
+            <div style={waitingSolveCard}>
+              <div style={waitingSolveIconBox}>
+                <ClockIcon size={44} color={C.accent} />
+              </div>
+              <h2 style={{ ...waitingSolveTitle, color: C.accent }}>
+                Fallback Round Active
+              </h2>
+              <p style={waitingSolveText}>
+                The challenge is open for fallback solving. Watch the projector screen for live countdown and instructions!
               </p>
             </div>
           ) : (

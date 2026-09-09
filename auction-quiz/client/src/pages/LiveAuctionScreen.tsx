@@ -40,6 +40,7 @@ export default function LiveAuctionScreen() {
     biddingTimer,
     mainTaskTimer,
     taskTimer,
+    extraTimer,
   } = useGamePhase();
 
   // Local state
@@ -51,7 +52,6 @@ export default function LiveAuctionScreen() {
   const [resultData, setResultData] = useState<ResultData | null>(null);
   const [questionImage, setQuestionImage] = useState<string | null>(null);
   const [bidFlash, setBidFlash] = useState(false);
-  const [manualTimer, setManualTimer] = useState({ isRunning: false, timeLeft: 0 });
 
   const prevBid = useRef(0);
   const autoResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -181,11 +181,11 @@ export default function LiveAuctionScreen() {
         soundManager.play("fail");
       }
 
-      // State 4: Auto-reset after 1.8s
+      // State 4: Auto-reset after 5.0s
       if (autoResetTimeoutRef.current) clearTimeout(autoResetTimeoutRef.current);
       autoResetTimeoutRef.current = setTimeout(() => {
         performReset();
-      }, 1800);
+      }, 5000);
     };
 
     const handleTaskResultEvent = (data: TaskResultEvent) => {
@@ -204,7 +204,7 @@ export default function LiveAuctionScreen() {
       if (autoResetTimeoutRef.current) clearTimeout(autoResetTimeoutRef.current);
       autoResetTimeoutRef.current = setTimeout(() => {
         performReset();
-      }, 1800);
+      }, 5000);
     };
 
     // 6. System Reset (State 4 Broadcast)
@@ -214,13 +214,6 @@ export default function LiveAuctionScreen() {
 
     const handleTimerEvent = (data: { auctionId: string; remaining: number }) => {
       setTimer(data.remaining);
-    };
-
-    const handleManualTimer = (data: any) => {
-      setManualTimer({
-        isRunning: data.isRunning ?? false,
-        timeLeft: data.isRunning ? (data.timeLeft ?? 0) : 0,
-      });
     };
 
     const handleQuestionChanged = (data: any) => {
@@ -248,7 +241,6 @@ export default function LiveAuctionScreen() {
     socket.on("task:result", handleTaskResultEvent);
     socket.on("system:reset" as any, handleSystemReset);
     socket.on("auction:timer", handleTimerEvent);
-    socket.on("manual_timer:update", handleManualTimer);
     socket.on("question:changed" as any, handleQuestionChanged);
     socket.on("state:full" as any, handleFullState);
 
@@ -266,7 +258,6 @@ export default function LiveAuctionScreen() {
       socket.off("task:result", handleTaskResultEvent);
       socket.off("system:reset" as any, handleSystemReset);
       socket.off("auction:timer", handleTimerEvent);
-      socket.off("manual_timer:update", handleManualTimer);
       socket.off("question:changed" as any, handleQuestionChanged);
       socket.off("state:full" as any, handleFullState);
     };
@@ -292,9 +283,12 @@ export default function LiveAuctionScreen() {
 
   // Derived state resolution
   const isBiddingPhase = phase === "bidding";
+  const isPostBidIdle = phase === "post_bid_idle" && !resultData;
   const isTaskPhase = phase === "main_task" && !resultData;
-  const isResultState = resultData !== null;
-  const isIdleState = !isBiddingPhase && !isTaskPhase && !isResultState;
+  const isFallbackIdle = phase === "fallback_idle" && !resultData;
+  const isFallbackActive = phase === "fallback_active" && !resultData;
+  const isResultState = phase === "result_display" || resultData !== null;
+  const isIdleState = !isBiddingPhase && !isPostBidIdle && !isTaskPhase && !isFallbackIdle && !isFallbackActive && !isResultState;
 
   // Active question image resolution
   const activeImage = currentQuestion?.image || questionImage;
@@ -302,8 +296,10 @@ export default function LiveAuctionScreen() {
   // Timers
   const activeBiddingTimer = biddingTimer ? biddingTimer.remaining : timer;
   const activeTaskTimer = (mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0;
+  const activeExtraTimer = extraTimer?.remaining ?? 0;
   const isBiddingUrgent = activeBiddingTimer <= 10;
   const isTaskUrgent = activeTaskTimer <= 30;
+  const isExtraUrgent = activeExtraTimer <= 30;
 
   return (
     <div style={root}>
@@ -398,38 +394,54 @@ export default function LiveAuctionScreen() {
           )}
 
           {/* ───────────────────────────────────────────────────
-              STATE 2: BID WON (MAIN TASK)
+              STATE 2A: POST-BID IDLE (WINNER DETERMINED, STANDBY)
               ─────────────────────────────────────────────────── */}
-          {isTaskPhase && (
+          {isPostBidIdle && (
             <div style={stateContainer}>
-              {/* 1. Winning Block (Primary) */}
+              {/* Winning Block */}
               <div style={winnerBlock}>
                 <span style={winnerBlockSubtitle}>AUCTION WON</span>
                 <div style={winnerTeamTitle}>
                   {winner?.teamName || winningTeam?.teamName || "WINNING TEAM"} WON THE BID
                 </div>
                 <div style={winnerBidSubtitle}>
-                  Bid: {winner?.bid || currentBid}
+                  Winning Bid: {winner?.bid || currentBid}
                 </div>
               </div>
 
-              {/* 2. Status Line */}
+              {/* Status Line */}
               <div style={solvingStatusLine}>
                 <span style={solvingDot} />
                 <span style={solvingText}>
-                  {winner?.teamName || winningTeam?.teamName || "Winning Team"} is solving
+                  Awaiting task timer start
                 </span>
               </div>
 
-              {/* 3. Task Timer (Primary Focus) */}
-              <div style={timerBox(isTaskUrgent)}>
-                <span style={timerBoxLabel(isTaskUrgent)}>TASK TIME REMAINING</span>
-                <div style={timerBoxValue(isTaskUrgent)}>
-                  {formatClock(activeTaskTimer)}
+              {/* Task Standby Box */}
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px 20px",
+                borderRadius: tokens.radius.xl,
+                backgroundColor: `${C.primary}08`,
+                border: `2px dashed ${C.border}`,
+                flexShrink: 0,
+                textAlign: "center",
+              }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: "4px" }}>
+                  TASK TIME
+                </span>
+                <div style={{ fontFamily: F.mono, fontWeight: 900, fontSize: "clamp(2.4rem, 3.8vw, 3.2rem)", color: C.muted, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                  --:--
                 </div>
+                <span style={{ fontSize: "0.75rem", color: C.muted, marginTop: "6px" }}>
+                  Standby for admin to start timer
+                </span>
               </div>
 
-              {/* 4. Last 5 Bids (Frozen) */}
+              {/* Last 5 Bids (Frozen) */}
               <div style={bidHistoryCard}>
                 <span style={bidHistoryHeader}>FINAL BIDS (FROZEN)</span>
                 <div style={bidListContainer}>
@@ -460,26 +472,248 @@ export default function LiveAuctionScreen() {
           )}
 
           {/* ───────────────────────────────────────────────────
-              STATE 3: RESULT (PASS / FAIL)
+              STATE 2B: MAIN TASK (SOLVING)
+              ─────────────────────────────────────────────────── */}
+          {isTaskPhase && (
+            <div style={stateContainer}>
+              {/* Winning Block */}
+              <div style={winnerBlock}>
+                <span style={winnerBlockSubtitle}>AUCTION WON</span>
+                <div style={winnerTeamTitle}>
+                  {winner?.teamName || winningTeam?.teamName || "WINNING TEAM"} WON THE BID
+                </div>
+                <div style={winnerBidSubtitle}>
+                  Bid: {winner?.bid || currentBid}
+                </div>
+              </div>
+
+              {/* Status Line */}
+              <div style={solvingStatusLine}>
+                <span style={solvingDot} />
+                <span style={solvingText}>
+                  {winner?.teamName || winningTeam?.teamName || "Winning Team"} is solving
+                </span>
+              </div>
+
+              {/* Task Timer (Primary Focus) */}
+              <div style={timerBox(isTaskUrgent)}>
+                <span style={timerBoxLabel(isTaskUrgent)}>TASK TIME REMAINING</span>
+                <div style={timerBoxValue(isTaskUrgent)}>
+                  {formatClock(activeTaskTimer)}
+                </div>
+              </div>
+
+              {/* Last 5 Bids (Frozen) */}
+              <div style={bidHistoryCard}>
+                <span style={bidHistoryHeader}>FINAL BIDS (FROZEN)</span>
+                <div style={bidListContainer}>
+                  {bidHistory.length === 0 ? (
+                    <div style={emptyHistoryText}>No bids recorded</div>
+                  ) : (
+                    bidHistory.map((b, idx) => {
+                      const isTop = idx === 0;
+                      return (
+                        <div
+                          key={`${b.teamName}-${b.amount}-${b.timestamp}`}
+                          style={bidRow(isTop)}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {isTop && <span style={latestBadge}>WINNING</span>}
+                            <span style={bidTeamName(isTop)}>{b.teamName}</span>
+                          </div>
+                          <div style={bidAmountText(isTop)}>
+                            → {b.amount}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────
+              STATE 2C: FALLBACK IDLE (STANDBY FOR EXTRA TIMER)
+              ─────────────────────────────────────────────────── */}
+          {isFallbackIdle && (
+            <div style={stateContainer}>
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px 18px",
+                borderRadius: tokens.radius.xl,
+                backgroundColor: `${C.danger}10`,
+                border: `2px solid ${C.danger}60`,
+                textAlign: "center",
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 800, color: C.danger, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "4px" }}>
+                  FALLBACK ROUND
+                </span>
+                <div style={{ fontFamily: F.heading, fontWeight: 900, fontSize: "clamp(1.2rem, 1.8vw, 1.5rem)", color: C.text, lineHeight: 1.2 }}>
+                  FALLBACK OPEN
+                </div>
+                <span style={{ fontSize: "0.8rem", color: C.muted, marginTop: "4px" }}>
+                  Primary team failed • Open to all teams
+                </span>
+              </div>
+
+              <div style={solvingStatusLine}>
+                <span style={solvingDot} />
+                <span style={solvingText}>
+                  Extra Timer Standby
+                </span>
+              </div>
+
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px 20px",
+                borderRadius: tokens.radius.xl,
+                backgroundColor: `${C.primary}08`,
+                border: `2px dashed ${C.border}`,
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: "4px" }}>
+                  {extraTimer?.label?.toUpperCase() || "EXTRA TIMER"}
+                </span>
+                <div style={{ fontFamily: F.mono, fontWeight: 900, fontSize: "clamp(2.4rem, 3.8vw, 3.2rem)", color: C.muted, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+                  --:--
+                </div>
+                <span style={{ fontSize: "0.75rem", color: C.muted, marginTop: "6px" }}>
+                  Standby for admin to start timer
+                </span>
+              </div>
+
+              {/* Last 5 Bids (Frozen) */}
+              <div style={bidHistoryCard}>
+                <span style={bidHistoryHeader}>FINAL BIDS (FROZEN)</span>
+                <div style={bidListContainer}>
+                  {bidHistory.length === 0 ? (
+                    <div style={emptyHistoryText}>No bids recorded</div>
+                  ) : (
+                    bidHistory.map((b, idx) => {
+                      const isTop = idx === 0;
+                      return (
+                        <div
+                          key={`${b.teamName}-${b.amount}-${b.timestamp}`}
+                          style={bidRow(isTop)}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {isTop && <span style={latestBadge}>WINNING</span>}
+                            <span style={bidTeamName(isTop)}>{b.teamName}</span>
+                          </div>
+                          <div style={bidAmountText(isTop)}>
+                            → {b.amount}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────
+              STATE 2D: FALLBACK ACTIVE (EXTRA TIMER RUNNING)
+              ─────────────────────────────────────────────────── */}
+          {isFallbackActive && (
+            <div style={stateContainer}>
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px 18px",
+                borderRadius: tokens.radius.xl,
+                backgroundColor: `${C.accent}15`,
+                border: `2px solid ${C.accent}`,
+                boxShadow: `0 0 24px ${C.accent}40`,
+                textAlign: "center",
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 800, color: C.accent, letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: "4px" }}>
+                  FALLBACK ROUND
+                </span>
+                <div style={{ fontFamily: F.heading, fontWeight: 900, fontSize: "clamp(1.2rem, 1.8vw, 1.5rem)", color: C.text, lineHeight: 1.2 }}>
+                  SOLVING IN PROGRESS
+                </div>
+                <span style={{ fontSize: "0.8rem", color: C.muted, marginTop: "4px" }}>
+                  Other teams can solve now
+                </span>
+              </div>
+
+              {/* Extra Timer Box */}
+              <div style={timerBox(isExtraUrgent)}>
+                <span style={timerBoxLabel(isExtraUrgent)}>{extraTimer?.label?.toUpperCase() || "EXTRA TIMER"}</span>
+                <div style={timerBoxValue(isExtraUrgent)}>
+                  {formatClock(activeExtraTimer)}
+                </div>
+              </div>
+
+              {/* Last 5 Bids (Frozen) */}
+              <div style={bidHistoryCard}>
+                <span style={bidHistoryHeader}>FINAL BIDS (FROZEN)</span>
+                <div style={bidListContainer}>
+                  {bidHistory.length === 0 ? (
+                    <div style={emptyHistoryText}>No bids recorded</div>
+                  ) : (
+                    bidHistory.map((b, idx) => {
+                      const isTop = idx === 0;
+                      return (
+                        <div
+                          key={`${b.teamName}-${b.amount}-${b.timestamp}`}
+                          style={bidRow(isTop)}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {isTop && <span style={latestBadge}>WINNING</span>}
+                            <span style={bidTeamName(isTop)}>{b.teamName}</span>
+                          </div>
+                          <div style={bidAmountText(isTop)}>
+                            → {b.amount}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ───────────────────────────────────────────────────
+              STATE 3: RESULT DISPLAY (5s LOCK)
               ─────────────────────────────────────────────────── */}
           {isResultState && (
             <div style={stateContainer}>
-              <div style={resultCard(resultData.result === "pass")}>
-                <div style={resultTitle(resultData.result === "pass")}>
-                  {resultData.result === "pass"
-                    ? `✅ ${resultData.teamName} PASSED`
-                    : `❌ ${resultData.teamName} FAILED`}
+              <div style={resultCard(resultData ? resultData.result === "pass" : true)}>
+                <div style={resultTitle(resultData ? resultData.result === "pass" : true)}>
+                  {resultData
+                    ? resultData.result === "pass"
+                      ? `✅ ${resultData.teamName} PASSED`
+                      : `❌ ${resultData.teamName} FAILED`
+                    : "ROUND COMPLETE"}
                 </div>
-                {resultData.result === "pass" && (
+                {resultData?.result === "pass" && (
                   <div style={resultPointsText}>
                     +{resultData.points || currentQuestion?.reward || 100} points awarded
                   </div>
                 )}
-                {manualTimer.isRunning && (
-                  <div style={challengeTimerBadge}>
-                    ⏱️ Challenge Timer Running ({formatClock(manualTimer.timeLeft)})
-                  </div>
-                )}
+                <div style={{
+                  fontSize: "0.8rem",
+                  color: C.muted,
+                  marginTop: "12px",
+                  fontFamily: F.mono,
+                  letterSpacing: "0.05em",
+                }}>
+                  Resetting in 5s...
+                </div>
               </div>
             </div>
           )}
@@ -508,11 +742,11 @@ export default function LiveAuctionScreen() {
               - Remains visible on bid won
               - Cleared after result declaration upon auto-reset
           */}
-          {activeImage && !isResultState ? (
+          {activeImage ? (
             <div style={questionCard}>
               <div style={questionMetaHeader}>
                 <span style={questionBadge}>
-                  {isTaskPhase ? "ACTIVE CHALLENGE" : "AUCTION QUESTION"}
+                  {isTaskPhase || isPostBidIdle || isFallbackIdle || isFallbackActive ? "ACTIVE CHALLENGE" : "AUCTION QUESTION"}
                 </span>
                 {currentQuestion && (
                   <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
@@ -904,20 +1138,6 @@ const resultPointsText: React.CSSProperties = {
   fontFamily: F.heading,
   fontWeight: 800,
   fontSize: "1.2rem",
-  color: C.accent,
-};
-
-const challengeTimerBadge: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "6px",
-  marginTop: "8px",
-  padding: "6px 14px",
-  borderRadius: tokens.radius.full,
-  backgroundColor: `${C.accent}15`,
-  border: `1px solid ${C.accent}40`,
-  fontSize: "0.85rem",
-  fontWeight: 700,
   color: C.accent,
 };
 

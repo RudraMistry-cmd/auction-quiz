@@ -40,21 +40,22 @@ export function setupSocketHandlers(io: Server) {
   };
 
   let autoResetTimer: NodeJS.Timeout | null = null;
-  const scheduleAutoReset = () => {
+  const scheduleAutoReset = (delayMs: number = 5000) => {
     if (autoResetTimer) clearTimeout(autoResetTimer);
     autoResetTimer = setTimeout(async () => {
       try {
         stateManager.resetRound();
         auctionService.resetAuction();
         taskService.resetTask();
+        timerEngineService.resetAll();
         io.emit("system:reset");
         io.emit("phase:changed", stateManager.getGameState());
         await broadcastFullState();
-        console.log("[AutoReset] system:reset triggered: round returned to idle");
+        console.log("[AutoReset] system:reset triggered: round returned to idle after 5s result display");
       } catch (e) {
         console.error("[AutoReset] Failed to execute system:reset:", e);
       }
-    }, 1800);
+    }, delayMs);
   };
 
   const getFullSyncState = async (): Promise<FullSyncState> => {
@@ -75,6 +76,9 @@ export function setupSocketHandlers(io: Server) {
         main: timers.mainTaskTimer,
         side: timers.explicitTimer,
         explicit: timers.explicitTimer,
+        auctionTimer: timers.auctionTimer,
+        taskTimer: timers.taskTimer,
+        extraTimer: timers.extraTimer,
         manual: manualTimer,
       },
       scoreboard: scoreboard as any,
@@ -708,6 +712,207 @@ export function setupSocketHandlers(io: Server) {
       }
     });
 
+    // ─── Flow Control Handlers (Task Timer, Extra Timer, Results) ───
+
+    socket.on("admin:start_task_timer", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const curPhase = stateManager.getPhase();
+        if (curPhase !== "post_bid_idle" && curPhase !== "main_task") {
+          cb({ success: false, error: `Cannot start task timer in phase '${curPhase}'` });
+          return;
+        }
+        const activeTask = taskService.getActiveTask();
+        if (!activeTask) {
+          cb({ success: false, error: "No active task available" });
+          return;
+        }
+
+        const curQ = stateManager.getCurrentQuestion();
+        const duration = (data?.duration && data.duration > 0)
+          ? data.duration
+          : (curQ?.time || activeTask.time_limit || 60);
+
+        stateManager.startMainTaskPhase(activeTask.taskId);
+
+        const timer = timerEngineService.startMainTask(duration, () => {
+          io.emit("timer:end", { timerType: "task" });
+          io.emit("sound:timer_stopped");
+          io.emit("task:ended", { taskId: activeTask.taskId });
+          io.emit("task:end", { taskId: activeTask.taskId });
+        });
+
+        io.emit("timer:task:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+          label: timer.label,
+        });
+        io.emit("timer:main:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("task:started", {
+          time_limit: timer.duration,
+          endAt: Date.now() + timer.duration * 1000,
+          taskId: activeTask.taskId,
+          teamName: activeTask.teamName,
+          reward: curQ?.reward,
+          questionImage: curQ?.image,
+        });
+        io.emit("task:start", {
+          taskId: activeTask.taskId,
+          teamName: activeTask.teamName,
+          time_limit: timer.duration,
+        });
+        io.emit("sound:timer_started");
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        cb({ success: true });
+        console.log(`[Flow] Admin started task timer: ${duration}s for ${activeTask.teamName}`);
+      } catch (err: any) {
+        console.error("[Socket] admin:start_task_timer failed:", err);
+        cb({ success: false, error: err.message || "Failed to start task timer" });
+      }
+    });
+
+    socket.on("admin:pause_task_timer", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.pauseMainTask();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        io.emit("sound:timer_stopped");
+        await broadcastFullState();
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to pause task timer" });
+      }
+    });
+
+    socket.on("admin:adjust_task_timer", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const s = data?.seconds || 30;
+        timerEngineService.adjustMainTask(s);
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to adjust task timer" });
+      }
+    });
+
+    socket.on("admin:stop_task_timer", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.stopMainTask();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        io.emit("sound:timer_stopped");
+        await broadcastFullState();
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to stop task timer" });
+      }
+    });
+
+    socket.on("admin:fail_with_fallback", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        resetManualTimer();
+        const r = await taskService.failWithFallback();
+        io.emit("sound:task_result", { result: "fail" });
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        cb({ success: true });
+        console.log(`[Flow] Winner failed, fallback enabled. Phase: fallback_idle`);
+      } catch (err: any) {
+        console.error("[Socket] admin:fail_with_fallback failed:", err);
+        cb({ success: false, error: err.message || "Fail with fallback failed" });
+      }
+    });
+
+    socket.on("admin:start_extra_timer", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const duration = (data?.duration && data.duration > 0) ? data.duration : 60;
+        const label = data?.label || "Extra Timer";
+        stateManager.startFallbackActive();
+
+        const timer = timerEngineService.startExtraTimer(duration, label, () => {
+          io.emit("timer:end", { timerType: "extra" });
+          io.emit("sound:timer_stopped");
+        });
+
+        io.emit("timer:extra:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+          label: timer.label,
+        });
+        io.emit("timer:explicit:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("timer:side:start", {
+          startTime: timer.startTime,
+          duration: timer.duration,
+          remaining: timer.remaining,
+        });
+        io.emit("sound:timer_started");
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        cb({ success: true });
+        console.log(`[Flow] Extra timer started (${label}, ${duration}s). Phase: fallback_active`);
+      } catch (err: any) {
+        console.error("[Socket] admin:start_extra_timer failed:", err);
+        cb({ success: false, error: err.message || "Failed to start extra timer" });
+      }
+    });
+
+    socket.on("admin:pause_extra_timer", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.pauseExtraTimer();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        io.emit("sound:timer_stopped");
+        await broadcastFullState();
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to pause extra timer" });
+      }
+    });
+
+    socket.on("admin:adjust_extra_timer", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const s = data?.seconds || 30;
+        timerEngineService.adjustExtraTimer(s);
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to adjust extra timer" });
+      }
+    });
+
+    socket.on("admin:stop_extra_timer", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        timerEngineService.stopExtraTimer();
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        io.emit("sound:timer_stopped");
+        await broadcastFullState();
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to stop extra timer" });
+      }
+    });
+
     socket.on("admin:pass_task", async (_data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
@@ -734,8 +939,9 @@ export function setupSocketHandlers(io: Server) {
         io.emit("scoreboard:updated", { teams: scoreboard as any });
         io.emit("team:update", { team: r.team });
         io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
-        scheduleAutoReset();
+        scheduleAutoReset(5000);
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Pass failed" });
@@ -766,34 +972,14 @@ export function setupSocketHandlers(io: Server) {
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
-        scheduleAutoReset();
+        scheduleAutoReset(5000);
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Fail failed" });
       }
     });
 
-    socket.on("admin:end_failed_task", async (_data, cb) => {
-      if (!requireAdmin(cb)) return;
-      try {
-        resetManualTimer();
-        const r = await taskService.endFailedTaskNormally();
-        io.emit("result:declared", {
-          result: "fail",
-          teamName: (r.task as any)?.teamName || "Winning Team",
-          points: 0,
-        });
-        io.emit("phase:changed", stateManager.getGameState());
-        io.emit("timer:update", timerEngineService.getTimers() as any);
-        await broadcastFullState();
-        scheduleAutoReset();
-        cb({ success: true });
-      } catch (err: any) {
-        cb({ success: false, error: err.message || "End failed task failed" });
-      }
-    });
-
-    socket.on("admin:assign_fallback", async (data, cb) => {
+    socket.on("admin:fallback_pass", async (data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
         if (!data?.teamId) {
@@ -801,6 +987,7 @@ export function setupSocketHandlers(io: Server) {
           return;
         }
         resetManualTimer();
+        const winner = stateManager.getWinningTeam();
         const r = await taskService.assignFallbackTeam(data.teamId);
         const scoreboard = await teamService.getScoreboard();
         io.emit("task:result", {
@@ -814,9 +1001,10 @@ export function setupSocketHandlers(io: Server) {
           coinsDeducted: 0,
         });
         io.emit("result:declared", {
-          result: "pass",
+          result: "fallback_pass",
           teamName: r.fallbackTeam.teamName,
           points: r.rewardPoints,
+          winningTeamName: winner?.teamName,
         });
         io.emit("sound:task_result", { result: "pass" });
         io.emit("scoreboard:update", { teams: scoreboard as any });
@@ -825,10 +1013,97 @@ export function setupSocketHandlers(io: Server) {
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
-        scheduleAutoReset();
+        scheduleAutoReset(5000);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Fallback pass failed" });
+      }
+    });
+
+    socket.on("admin:assign_fallback", async (data, cb) => {
+      // Alias to admin:fallback_pass
+      if (!requireAdmin(cb)) return;
+      try {
+        if (!data?.teamId) {
+          cb({ success: false, error: "Missing teamId" });
+          return;
+        }
+        resetManualTimer();
+        const winner = stateManager.getWinningTeam();
+        const r = await taskService.assignFallbackTeam(data.teamId);
+        const scoreboard = await teamService.getScoreboard();
+        io.emit("task:result", {
+          taskId: r.task.taskId,
+          result: "pass",
+          teamId: r.fallbackTeam.teamId,
+          teamName: r.fallbackTeam.teamName,
+          coins: r.fallbackTeam.bid_coins,
+          rewardPoints: r.fallbackTeam.reward_points,
+          rewardGranted: r.rewardPoints,
+          coinsDeducted: 0,
+        });
+        io.emit("result:declared", {
+          result: "fallback_pass",
+          teamName: r.fallbackTeam.teamName,
+          points: r.rewardPoints,
+          winningTeamName: winner?.teamName,
+        });
+        io.emit("sound:task_result", { result: "pass" });
+        io.emit("scoreboard:update", { teams: scoreboard as any });
+        io.emit("scoreboard:updated", { teams: scoreboard as any });
+        io.emit("team:update", { team: r.fallbackTeam });
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        scheduleAutoReset(5000);
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Assign fallback failed" });
+      }
+    });
+
+    socket.on("admin:fallback_fail", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        resetManualTimer();
+        const winner = stateManager.getWinningTeam();
+        const r = await taskService.endFailedTaskNormally();
+        io.emit("result:declared", {
+          result: "fallback_fail",
+          teamName: winner?.teamName || "Winning Team",
+          points: 0,
+        });
+        io.emit("sound:task_result", { result: "fail" });
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        scheduleAutoReset(5000);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Fallback fail failed" });
+      }
+    });
+
+    socket.on("admin:end_failed_task", async (_data, cb) => {
+      // Alias to admin:fallback_fail
+      if (!requireAdmin(cb)) return;
+      try {
+        resetManualTimer();
+        const winner = stateManager.getWinningTeam();
+        const r = await taskService.endFailedTaskNormally();
+        io.emit("result:declared", {
+          result: "fallback_fail",
+          teamName: winner?.teamName || "Winning Team",
+          points: 0,
+        });
+        io.emit("sound:task_result", { result: "fail" });
+        io.emit("phase:changed", stateManager.getGameState());
+        io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
+        scheduleAutoReset(5000);
+        cb({ success: true });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "End failed task failed" });
       }
     });
 
@@ -1014,7 +1289,7 @@ export function setupSocketHandlers(io: Server) {
       io.emit("phase:changed", stateManager.getGameState());
 
       // Start 60s bidding timer via singleton timerEngineService
-      timerEngineService.startBidding(60, async () => {
+      const bTimer = timerEngineService.startBidding(60, async () => {
         try {
           resetManualTimer();
           const result = await auctionService.endAuction();
@@ -1024,23 +1299,18 @@ export function setupSocketHandlers(io: Server) {
 
           if (result.winner && result.winningBid != null) {
             // BID WIN (CRITICAL FLOW)
-            // Automatically:
-            // 1. Stop biddingTimer (already stopped by timerEngineService)
-            // 2. Set winningTeam & phase = "main_task"
-            // 3. Start mainTaskTimer using dynamic time from question (NOT hardcoded 300s)
-            // IMPORTANT: No admin click required between bid win and task start!
+            // On bid win:
+            // 1. Stop auctionTimer (already stopped by timerEngineService)
+            // 2. Set phase = post_bid_idle
+            // 3. Set winningTeam
+            // 4. Deduct bid coins immediately (handled inside endAuction transaction)
+            // 5. DO NOT start any timer!
             try {
               const task = await taskService.assignTask({
                 auctionId: result.auction.auctionId,
                 teamId: result.winner.teamId,
                 teamName: result.winner.teamName,
                 finalBid: result.winningBid,
-              });
-
-              const dynamicTime = curQ.time;
-              const mainTimer = timerEngineService.startMainTask(dynamicTime, () => {
-                io.emit("task:ended", { taskId: task.taskId });
-                io.emit("task:end", { taskId: task.taskId });
               });
 
               io.emit("auction:ended", {
@@ -1061,24 +1331,7 @@ export function setupSocketHandlers(io: Server) {
                 bidAmount: result.winningBid,
               });
               io.emit("task:assigned", task as any);
-              io.emit("task:started", {
-                time_limit: dynamicTime,
-                endAt: Date.now() + dynamicTime * 1000,
-                taskId: task.taskId,
-                teamName: task.teamName,
-                reward: curQ.reward,
-                questionImage: curQ.image,
-              });
-              io.emit("task:start", {
-                taskId: task.taskId,
-                teamName: task.teamName,
-                time_limit: dynamicTime,
-              });
-              io.emit("timer:main:start", {
-                startTime: mainTimer.startTime,
-                duration: mainTimer.duration,
-                remaining: mainTimer.remaining,
-              });
+
               const scoreboard = await teamService.getScoreboard();
               io.emit("scoreboard:update", { teams: scoreboard as any });
               io.emit("scoreboard:updated", { teams: scoreboard as any });
@@ -1086,19 +1339,20 @@ export function setupSocketHandlers(io: Server) {
               if (winnerTeam) {
                 io.emit("team:update", { team: winnerTeam });
               }
+
               io.emit("phase:changed", stateManager.getGameState());
+              io.emit("timer:update", timerEngineService.getTimers() as any);
               await broadcastFullState();
-              console.log(`[Auction->Task] Auto transitioned: ${task.teamName} won for ${task.finalBid}. Task timer: ${dynamicTime}s`);
+              console.log(`[Auction->PostBidIdle] ${task.teamName} won for ${task.finalBid}. Phase: post_bid_idle (no timer started)`);
             } catch (err) {
-              console.error("[Auction] Auto task assignment failed:", err);
-              stateManager.setPhase("ended");
+              console.error("[Auction] Task assignment failed:", err);
+              stateManager.setPhase("idle");
               io.emit("phase:changed", stateManager.getGameState());
               await broadcastFullState();
             }
           } else {
             // EDGE CASE: If 60s timer expires with 0 bids:
-            // - phase = "ended"
-            // - show "No Winner"
+            // - phase = "idle"
             // - do NOT start task timer
             stateManager.auctionClosedIdle(result.auction.auctionId);
             io.emit("auction:ended", {
@@ -1107,12 +1361,19 @@ export function setupSocketHandlers(io: Server) {
               winningBid: null,
             });
             io.emit("phase:changed", stateManager.getGameState());
+            io.emit("timer:update", timerEngineService.getTimers() as any);
             await broadcastFullState();
-            console.log(`[Auction] Ended with 0 bids. Phase: ended ("No Winner")`);
+            console.log(`[Auction] Ended with 0 bids. Phase: idle ("No Winner")`);
           }
         } catch (err) {
           console.error("[Socket] Auction expiry handling failed:", err);
         }
+      });
+
+      io.emit("timer:auction:start", {
+        startTime: bTimer.startTime,
+        duration: bTimer.duration,
+        remaining: bTimer.remaining,
       });
 
       // Backward compatible timer ticker

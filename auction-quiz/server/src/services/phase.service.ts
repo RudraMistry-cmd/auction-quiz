@@ -79,6 +79,9 @@ class StateManager {
       mainTaskTimer: timers.mainTaskTimer,
       explicitTimer: timers.explicitTimer,
       sideTaskTimer: timers.explicitTimer,
+      auctionTimer: timers.auctionTimer,
+      taskTimer: timers.taskTimer,
+      extraTimer: timers.extraTimer,
     };
   }
 
@@ -131,6 +134,10 @@ class StateManager {
     return this.currentTaskId;
   }
 
+  public setTaskId(taskId: string | null): void {
+    this.currentTaskId = taskId;
+  }
+
   public getQuestionImage(): string | null {
     return this.currentQuestion ? this.currentQuestion.image : this.currentQuestionImage;
   }
@@ -175,11 +182,10 @@ class StateManager {
     this.leadingTeam = "";
   }
 
-  /** BIDDING → MAIN_TASK */
-  public auctionClosedToTask(auctionId: string, taskId: string, winner: { teamId: string; teamName: string }, finalBid: number): void {
-    this.phase = "main_task";
-    this.currentAuctionId = null;
-    this.currentTaskId = taskId;
+  /** BIDDING → POST_BID_IDLE (Winner won bid, awaiting admin to start task timer) */
+  public auctionClosedToPostBid(auctionId: string, winner: { teamId: string; teamName: string }, finalBid: number): void {
+    this.phase = "post_bid_idle";
+    this.currentAuctionId = auctionId;
     this.winningTeam = winner;
     this.leadingTeam = winner.teamName;
     this.currentBid = finalBid;
@@ -188,18 +194,36 @@ class StateManager {
     }
   }
 
-  /** BIDDING → ENDED (No winner / 0 bids) */
+  /** BIDDING → IDLE (No winner / 0 bids) */
   public auctionClosedIdle(auctionId: string): void {
-    this.phase = "ended";
+    this.phase = "idle";
     this.currentAuctionId = null;
     this.winningTeam = null;
     this.leadingTeam = "";
     this.currentBid = 0;
   }
 
-  /** On Main Task Fail (stops main timer, does not force phase change) */
-  public markMainTaskFailed(): void {
+  /** POST_BID_IDLE → MAIN_TASK (Admin starts task timer) */
+  public startMainTaskPhase(taskId?: string): void {
+    this.phase = "main_task";
+    if (taskId) this.currentTaskId = taskId;
+  }
+
+  /** MAIN_TASK → FALLBACK_IDLE (Admin rejected winner, fallback open) */
+  public failToFallback(): void {
+    this.phase = "fallback_idle";
     timerEngineService.stopMainTask();
+  }
+
+  /** FALLBACK_IDLE → FALLBACK_ACTIVE (Extra timer running) */
+  public startFallbackActive(): void {
+    this.phase = "fallback_active";
+  }
+
+  /** Any resolution → RESULT_DISPLAY (5s display lock) */
+  public setResultDisplay(): void {
+    this.phase = "result_display";
+    timerEngineService.resetAll();
   }
 
   /** Reset round to IDLE */
@@ -215,17 +239,9 @@ class StateManager {
     timerEngineService.resetAll();
   }
 
-  /** MAIN_TASK / SIDE_TASK → IDLE (Task resolved) */
+  /** Task resolved */
   public taskResolved(taskId: string): void {
-    this.phase = "idle";
-    this.currentTaskId = null;
-    this.currentAuctionId = null;
-    this.winningTeam = null;
-    this.leadingTeam = "";
-    this.currentBid = 0;
-    this.currentQuestion = null;
-    this.currentQuestionImage = null;
-    timerEngineService.resetAll();
+    this.setResultDisplay();
   }
 }
 

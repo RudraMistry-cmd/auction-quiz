@@ -13,6 +13,9 @@ export class TimerEngineService {
     mainTaskTimer: TimestampTimer | null;
     explicitTimer: TimestampTimer | null;
     sideTaskTimer?: TimestampTimer | null;
+    auctionTimer?: TimestampTimer | null;
+    taskTimer?: TimestampTimer | null;
+    extraTimer?: TimestampTimer | null;
   }) => void) | null = null;
 
   private interval: NodeJS.Timeout | null = null;
@@ -40,12 +43,17 @@ export class TimerEngineService {
   }
 
   public getTimers() {
+    const auc = this.snapshot(this.biddingTimer);
+    const task = this.snapshot(this.mainTaskTimer);
     const exp = this.snapshot(this.explicitTimer);
     return {
-      biddingTimer: this.snapshot(this.biddingTimer),
-      mainTaskTimer: this.snapshot(this.mainTaskTimer),
+      biddingTimer: auc,
+      mainTaskTimer: task,
       explicitTimer: exp,
       sideTaskTimer: exp, // alias
+      auctionTimer: auc,
+      taskTimer: task,
+      extraTimer: exp,
     };
   }
 
@@ -54,11 +62,14 @@ export class TimerEngineService {
     mainTaskTimer: TimestampTimer | null;
     explicitTimer: TimestampTimer | null;
     sideTaskTimer?: TimestampTimer | null;
+    auctionTimer?: TimestampTimer | null;
+    taskTimer?: TimestampTimer | null;
+    extraTimer?: TimestampTimer | null;
   }) => void) {
     this.onTickCb = cb;
   }
 
-  // --- Bidding Timer (singleton: cancels previous bidding timer) ---
+  // ─── Auction Timer (Auto, 60s, stops on win or expiry) ───
   public startBidding(duration: number = 60, onExpire?: () => void): TimestampTimer {
     this.stopBidding();
     this.onBiddingExpireCb = onExpire || null;
@@ -67,7 +78,7 @@ export class TimerEngineService {
       duration,
       remaining: duration,
       isRunning: true,
-      label: "Bidding",
+      label: "Auction",
     };
     return this.snapshot(this.biddingTimer)!;
   }
@@ -77,18 +88,57 @@ export class TimerEngineService {
     this.onBiddingExpireCb = null;
   }
 
-  // --- Main Task Timer (singleton: cancels previous main task timer) ---
+  // ─── Task Timer (Manual, only allowed if winner exists, NEVER auto-start) ───
   public startMainTask(duration: number, onExpire?: () => void): TimestampTimer {
-    this.stopMainTask();
-    this.onMainTaskExpireCb = onExpire || null;
+    if (this.mainTaskTimer && !this.mainTaskTimer.isRunning && this.mainTaskTimer.remaining > 0 && duration <= 0) {
+      const remaining = this.mainTaskTimer.remaining;
+      this.mainTaskTimer = {
+        startTime: Date.now(),
+        duration: remaining,
+        remaining,
+        isRunning: true,
+        label: "Task Time Remaining",
+      };
+    } else {
+      this.mainTaskTimer = {
+        startTime: Date.now(),
+        duration,
+        remaining: duration,
+        isRunning: true,
+        label: "Task Time Remaining",
+      };
+    }
+    if (onExpire) this.onMainTaskExpireCb = onExpire;
+    return this.snapshot(this.mainTaskTimer)!;
+  }
+
+  public pauseMainTask(): TimestampTimer | null {
+    if (!this.mainTaskTimer) return null;
+    const remaining = this.calcRemaining(this.mainTaskTimer);
     this.mainTaskTimer = {
       startTime: Date.now(),
-      duration,
-      remaining: duration,
-      isRunning: true,
-      label: "Main Task",
+      duration: remaining,
+      remaining,
+      isRunning: false,
+      label: "Task Time Remaining",
     };
-    return this.snapshot(this.mainTaskTimer)!;
+    return this.snapshot(this.mainTaskTimer);
+  }
+
+  public adjustMainTask(seconds: number): TimestampTimer | null {
+    if (!this.mainTaskTimer) {
+      return this.startMainTask(Math.max(0, seconds));
+    }
+    const currentRemaining = this.calcRemaining(this.mainTaskTimer);
+    const newRemaining = Math.max(0, currentRemaining + seconds);
+    this.mainTaskTimer = {
+      startTime: Date.now(),
+      duration: newRemaining,
+      remaining: newRemaining,
+      isRunning: this.mainTaskTimer.isRunning,
+      label: "Task Time Remaining",
+    };
+    return this.snapshot(this.mainTaskTimer);
   }
 
   public stopMainTask(): void {
@@ -96,17 +146,16 @@ export class TimerEngineService {
     this.onMainTaskExpireCb = null;
   }
 
-  // --- Explicit Timer (Admin-controlled, optional "Open Challenge" / "Side Task") ---
-  public startExplicitTimer(duration: number = 60, onExpire?: () => void): TimestampTimer {
-    // If paused and has remaining time, resume from remaining time unless a new duration was passed
-    if (this.explicitTimer && !this.explicitTimer.isRunning && this.explicitTimer.remaining > 0 && duration === 60) {
+  // ─── Extra Timer (Manual, used for fallback, editable label) ───
+  public startExtraTimer(duration: number = 60, label: string = "Extra Timer", onExpire?: () => void): TimestampTimer {
+    if (this.explicitTimer && !this.explicitTimer.isRunning && this.explicitTimer.remaining > 0 && duration <= 0) {
       const remaining = this.explicitTimer.remaining;
       this.explicitTimer = {
         startTime: Date.now(),
         duration: remaining,
         remaining,
         isRunning: true,
-        label: "Open Challenge",
+        label: label || this.explicitTimer.label || "Extra Timer",
       };
     } else {
       this.explicitTimer = {
@@ -114,14 +163,14 @@ export class TimerEngineService {
         duration,
         remaining: duration,
         isRunning: true,
-        label: "Open Challenge",
+        label: label || "Extra Timer",
       };
     }
     if (onExpire) this.onExplicitExpireCb = onExpire;
     return this.snapshot(this.explicitTimer)!;
   }
 
-  public pauseExplicitTimer(): TimestampTimer | null {
+  public pauseExtraTimer(): TimestampTimer | null {
     if (!this.explicitTimer) return null;
     const remaining = this.calcRemaining(this.explicitTimer);
     this.explicitTimer = {
@@ -129,14 +178,14 @@ export class TimerEngineService {
       duration: remaining,
       remaining,
       isRunning: false,
-      label: "Open Challenge",
+      label: this.explicitTimer.label || "Extra Timer",
     };
     return this.snapshot(this.explicitTimer);
   }
 
-  public adjustExplicitTimer(seconds: number): TimestampTimer | null {
+  public adjustExtraTimer(seconds: number): TimestampTimer | null {
     if (!this.explicitTimer) {
-      return this.startExplicitTimer(Math.max(0, seconds));
+      return this.startExtraTimer(Math.max(0, seconds), "Extra Timer");
     }
     const currentRemaining = this.calcRemaining(this.explicitTimer);
     const newRemaining = Math.max(0, currentRemaining + seconds);
@@ -145,17 +194,29 @@ export class TimerEngineService {
       duration: newRemaining,
       remaining: newRemaining,
       isRunning: this.explicitTimer.isRunning,
-      label: "Open Challenge",
+      label: this.explicitTimer.label || "Extra Timer",
     };
     return this.snapshot(this.explicitTimer);
   }
 
-  public stopExplicitTimer(): void {
+  public stopExtraTimer(): void {
     this.explicitTimer = null;
     this.onExplicitExpireCb = null;
   }
 
-  // --- Aliases for side timer (backwards compatibility) ---
+  // Backwards compatibility aliases
+  public startExplicitTimer(duration: number = 60, onExpire?: () => void): TimestampTimer {
+    return this.startExtraTimer(duration, "Open Challenge", onExpire);
+  }
+  public pauseExplicitTimer(): TimestampTimer | null {
+    return this.pauseExtraTimer();
+  }
+  public adjustExplicitTimer(seconds: number): TimestampTimer | null {
+    return this.adjustExtraTimer(seconds);
+  }
+  public stopExplicitTimer(): void {
+    this.stopExtraTimer();
+  }
   public startSideTimer(duration: number = 60, onExpire?: () => void): TimestampTimer {
     return this.startExplicitTimer(duration, onExpire);
   }
@@ -172,7 +233,7 @@ export class TimerEngineService {
   public resetAll(): void {
     this.stopBidding();
     this.stopMainTask();
-    this.stopExplicitTimer();
+    this.stopExtraTimer();
   }
 
   private startHeartbeat(): void {
@@ -195,6 +256,7 @@ export class TimerEngineService {
         if (rem <= 0) {
           this.mainTaskTimer.isRunning = false;
           const cb = this.onMainTaskExpireCb;
+          this.onMainTaskExpireCb = null; // fire once
           cb?.();
         }
       }
@@ -205,6 +267,7 @@ export class TimerEngineService {
         if (rem <= 0) {
           this.explicitTimer.isRunning = false;
           const cb = this.onExplicitExpireCb;
+          this.onExplicitExpireCb = null; // fire once
           cb?.();
         }
       }

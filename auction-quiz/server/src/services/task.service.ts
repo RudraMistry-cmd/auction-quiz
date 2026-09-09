@@ -147,7 +147,8 @@ export class TaskService {
 
       this.activeTask = task;
       this.stamp(task);
-      stateManager.auctionClosedToTask(params.auctionId, task.taskId, { teamId: params.teamId, teamName: params.teamName }, params.finalBid);
+      stateManager.auctionClosedToPostBid(params.auctionId, { teamId: params.teamId, teamName: params.teamName }, params.finalBid);
+      stateManager.setTaskId(task.taskId);
       return this.activeTask;
     });
   }
@@ -383,9 +384,9 @@ export class TaskService {
       if (!trow || (trow.status !== "active" && trow.status !== "ended")) {
         throw new Error("Cannot mark result: no decidable task");
       }
-      // …and authorized: live task phase.
+      // …and authorized: live task or post_bid_idle phase.
       const currentPhase = stateManager.getPhase();
-      const livePath = currentPhase === "main_task" &&
+      const livePath = (currentPhase === "main_task" || currentPhase === "post_bid_idle" || currentPhase === "fallback_active" || currentPhase === "fallback_idle") &&
         stateManager.getTaskId() === params.taskId &&
         this.activeTask?.taskId === params.taskId;
       if (!livePath) {
@@ -467,13 +468,13 @@ export class TaskService {
     const t = this.activeTask;
     if (!t) throw new Error("No active task to pass");
     timerEngineService.stopMainTask();
-    timerEngineService.stopExplicitTimer();
+    timerEngineService.stopExtraTimer();
     const res = await this.submitResult({ taskId: t.taskId, result: "pass" });
-    stateManager.setPhase("ended");
+    stateManager.setResultDisplay();
     return res;
   }
 
-  /** FAIL the active main task: stops mainTaskTimer, marks winning team 0 points (no forced phase change) */
+  /** FAIL the active main task directly: no reward, phase -> result_display */
   async failWinningTask(): Promise<{ task: Task; winningTeam: Team }> {
     return this.withLock(async () => {
       const t = this.activeTask;
@@ -481,40 +482,64 @@ export class TaskService {
       const db = await getDb();
 
       timerEngineService.stopMainTask();
+      timerEngineService.stopExtraTimer();
 
-      // Winning team gets NOTHING: mark task result as 'fail'
-      run(db, `UPDATE tasks SET result = 'fail' WHERE taskId = ?`, [t.taskId]);
-      persistDb();
-
-      stateManager.markMainTaskFailed();
-
-      const team = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [t.teamId]) as Team;
-      return { task: { ...t, result: "fail" }, winningTeam: team };
-    });
-  }
-
-  /** End failed task normally without awarding any fallback team (phase = ended) */
-  async endFailedTaskNormally(): Promise<{ task: Task }> {
-    return this.withLock(async () => {
-      const t = this.activeTask;
-      if (!t) throw new Error("No active task");
-      const db = await getDb();
-      timerEngineService.stopMainTask();
-      timerEngineService.stopExplicitTimer();
       run(db, `UPDATE tasks SET status = 'completed', result = 'fail' WHERE taskId = ?`, [t.taskId]);
       run(db, `
         INSERT INTO task_results (resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt)
         VALUES (?, ?, 'fail', 0, 0, ?)
       `, [uuidv4(), t.taskId, Date.now()]);
       persistDb();
-      stateManager.setPhase("ended");
+
+      stateManager.setResultDisplay();
+
+      const team = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [t.teamId]) as Team;
+      const finished: Task = { ...t, status: "completed" as const, result: "fail" };
+      this.activeTask = null;
+      return { task: finished, winningTeam: team };
+    });
+  }
+
+  /** FAIL with fallback: marks winning team 0 points, phase -> fallback_idle, no timer */
+  async failWithFallback(): Promise<{ task: Task; winningTeam: Team }> {
+    return this.withLock(async () => {
+      const t = this.activeTask;
+      if (!t) throw new Error("No active task to fail");
+      const db = await getDb();
+
+      timerEngineService.stopMainTask();
+
+      run(db, `UPDATE tasks SET result = 'fail' WHERE taskId = ?`, [t.taskId]);
+      persistDb();
+
+      stateManager.failToFallback();
+
+      const team = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [t.teamId]) as Team;
+      return { task: { ...t, result: "fail" }, winningTeam: team };
+    });
+  }
+
+  /** End failed task normally without awarding any fallback team (phase = result_display) */
+  async endFailedTaskNormally(): Promise<{ task: Task }> {
+    return this.withLock(async () => {
+      const t = this.activeTask;
+      if (!t) throw new Error("No active task");
+      const db = await getDb();
+      timerEngineService.resetAll();
+      run(db, `UPDATE tasks SET status = 'completed', result = 'fail' WHERE taskId = ?`, [t.taskId]);
+      run(db, `
+        INSERT INTO task_results (resultId, taskId, result, rewardPoints, coinsDeducted, decidedAt)
+        VALUES (?, ?, 'fail', 0, 0, ?)
+      `, [uuidv4(), t.taskId, Date.now()]);
+      persistDb();
+      stateManager.setResultDisplay();
       const finished: Task = { ...t, status: "completed" as const, result: "fail" };
       this.activeTask = null;
       return { task: finished };
     });
   }
 
-  /** Assign reward to another team (optional fallback) */
+  /** Assign reward to another team (fallback pass -> result_display) */
   async assignFallbackTeam(teamId: string): Promise<{ fallbackTeam: Team; rewardPoints: number; task: Task }> {
     return this.withLock(async () => {
       const t = this.activeTask;
@@ -542,10 +567,9 @@ export class TaskService {
       }
       persistDb();
 
-      timerEngineService.stopMainTask();
-      timerEngineService.stopExplicitTimer();
-      stateManager.setPhase("ended");
-      const finished: Task = { ...t, status: "completed" as const, result: "fail" };
+      timerEngineService.resetAll();
+      stateManager.setResultDisplay();
+      const finished: Task = { ...t, status: "completed" as const, result: "pass" };
       this.activeTask = null;
 
       const updatedTeam = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [teamId]) as Team;

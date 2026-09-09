@@ -63,7 +63,15 @@ export interface AuctionConfig {
 }
 
 // ---- Phase / Task / State Model ----
-export type GamePhase = "idle" | "bidding" | "main_task" | "ended";
+export type GamePhase =
+  | "idle"
+  | "bidding"
+  | "post_bid_idle"
+  | "main_task"
+  | "fallback_idle"
+  | "fallback_active"
+  | "result_display"
+  | "ended";
 
 export interface QuestionManifestItem {
   id: string;
@@ -98,6 +106,9 @@ export interface GameState {
   mainTaskTimer: TimestampTimer | null;
   explicitTimer: TimestampTimer | null;
   sideTaskTimer?: TimestampTimer | null;
+  auctionTimer?: TimestampTimer | null;
+  taskTimer?: TimestampTimer | null;
+  extraTimer?: TimestampTimer | null;
 }
 
 export interface FullSyncState {
@@ -111,6 +122,9 @@ export interface FullSyncState {
     side?: TimestampTimer | null;
     explicit?: TimestampTimer | null;
     manual?: ManualTimerState;
+    auctionTimer?: TimestampTimer | null;
+    taskTimer?: TimestampTimer | null;
+    extraTimer?: TimestampTimer | null;
   };
   scoreboard: ScoreboardResponse["teams"];
   currentQuestion: QuestionManifestItem | null;
@@ -290,6 +304,51 @@ export interface ClientEvents {
     data: Record<string, never>,
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
+  // Authoritative flow controls
+  "admin:start_task_timer": (
+    data: { duration?: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:pause_task_timer": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:adjust_task_timer": (
+    data: { seconds: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:stop_task_timer": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:fail_with_fallback": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:start_extra_timer": (
+    data: { duration?: number; label?: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:pause_extra_timer": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:adjust_extra_timer": (
+    data: { seconds: number },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:stop_extra_timer": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:fallback_pass": (
+    data: { teamId: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:fallback_fail": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
 }
 
 // ---- Socket Events: Server -> Client ----
@@ -298,6 +357,10 @@ export interface ServerEvents {
   "timer:main:start": (data: { startTime: number; duration: number; remaining: number }) => void;
   "timer:side:start": (data: { startTime: number; duration: number; remaining: number }) => void;
   "timer:explicit:start": (data: { startTime: number; duration: number; remaining: number }) => void;
+  "timer:auction:start"?: (data: { startTime: number; duration: number; remaining: number }) => void;
+  "timer:task:start"?: (data: { startTime: number; duration: number; remaining: number; label?: string }) => void;
+  "timer:extra:start"?: (data: { startTime: number; duration: number; remaining: number; label?: string }) => void;
+  "timer:end"?: (data: { timerType: "auction" | "task" | "extra" }) => void;
   "auction:started": (auction: Auction) => void;
   "auction:start"?: (auction: Auction) => void;
   "auction:bid_update": (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
@@ -314,7 +377,12 @@ export interface ServerEvents {
   "task:ended": (data: { taskId: string }) => void;
   "task:end"?: (data?: any) => void;
   "task:result": (data: TaskResultEvent) => void;
-  "result:declared"?: (data: { result: "pass" | "fail"; teamName: string; points?: number }) => void;
+  "result:declared"?: (data: {
+    result: "pass" | "fail" | "fallback_pass" | "fallback_fail";
+    teamName: string;
+    points?: number;
+    winningTeamName?: string;
+  }) => void;
   "system:reset"?: () => void;
   "scoreboard:updated": (data: { teams: ScoreboardResponse["teams"] }) => void;
   "scoreboard:update": (data: { teams: ScoreboardResponse["teams"] }) => void;

@@ -59,9 +59,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     winningTeam: phaseWinner,
     biddingTimer,
     mainTaskTimer,
-    sideTaskTimer,
-    explicitTimer,
-    task,
+    extraTimer,
     taskTimer,
     activeAuction,
     scoreboard: phaseScoreboard,
@@ -75,6 +73,20 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [scoreboard, setScoreboard] = useState<ScoreboardTeam[]>([]);
   const [lastEvent, setLastEvent] = useState<string>("");
   const [startArmed, setStartArmed] = useState(false);
+
+  // Task & Extra Timer controls
+  const [taskTimerDuration, setTaskTimerDuration] = useState<number>(60);
+  const [extraTimerDuration, setExtraTimerDuration] = useState<number>(60);
+  const [extraTimerLabel, setExtraTimerLabel] = useState<string>("Extra Timer");
+  const [taskTimerBusy, setTaskTimerBusy] = useState(false);
+  const [extraTimerBusy, setExtraTimerBusy] = useState(false);
+
+  // Sync taskTimerDuration to question time if selected
+  useEffect(() => {
+    if (phaseQuestion?.time) {
+      setTaskTimerDuration(phaseQuestion.time);
+    }
+  }, [phaseQuestion?.time]);
 
   // Sync state changes from useGamePhase
   useEffect(() => {
@@ -101,7 +113,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [fallbackTeamId, setFallbackTeamId] = useState<string>("");
   const [fallbackBusy, setFallbackBusy] = useState(false);
   const [endRoundBusy, setEndRoundBusy] = useState(false);
-  const [taskFailedLocally, setTaskFailedLocally] = useState(false);
 
   // Team management state
   const [teamEdits, setTeamEdits] = useState<Record<string, { bid_coins?: number; reward_points?: number }>>({});
@@ -138,7 +149,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [deleteConfirm, setDeleteConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
   const [dataToast, setDataToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const [failArmed, setFailArmed] = useState(false);
   const [taskPending, setTaskPending] = useState(false);
 
   // Fetch scoreboard
@@ -380,46 +390,13 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const failTask = () => {
     if (!socket || taskPending) return;
     setTaskPending(true);
-    setFailArmed(false);
     socket.emit("admin:fail_task", {}, (res) => {
       setTaskPending(false);
       if (res.success) {
-        setTaskFailedLocally(true);
-        setLastEvent("Task FAIL recorded! Winner gets 0 pts. Choose Option A (End) or Option B (Fallback).");
+        setLastEvent("Task FAIL recorded! Winner receives 0 pts.");
         fetchScoreboard();
       } else {
         setLastEvent(`Error: ${res.error || "Failed to fail task"}`);
-      }
-    });
-  };
-
-  const endFailedTask = () => {
-    if (!socket || endRoundBusy) return;
-    setEndRoundBusy(true);
-    socket.emit("admin:end_failed_task", {}, (res) => {
-      setEndRoundBusy(false);
-      if (res.success) {
-        setLastEvent("Task ended normally (No Winner).");
-        setTaskFailedLocally(false);
-        fetchScoreboard();
-      } else {
-        setLastEvent(`Error: ${res.error || "Failed to end task"}`);
-      }
-    });
-  };
-
-  const assignFallback = () => {
-    if (!socket || !fallbackTeamId || fallbackBusy) return;
-    setFallbackBusy(true);
-    socket.emit("admin:assign_fallback", { teamId: fallbackTeamId }, (res) => {
-      setFallbackBusy(false);
-      if (res.success) {
-        setLastEvent("Fallback team assigned successfully! Points awarded.");
-        setFallbackTeamId("");
-        setTaskFailedLocally(false);
-        fetchScoreboard();
-      } else {
-        setLastEvent(`Error: ${res.error || "Failed to assign fallback"}`);
       }
     });
   };
@@ -432,7 +409,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       if (res.success) {
         setLastEvent("Round ended. Reset to idle for next auction.");
         setSelectedQuestionId(null);
-        setTaskFailedLocally(false);
         fetchManifest();
         fetchScoreboard();
       } else {
@@ -441,27 +417,129 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     });
   };
 
-  const explicitTimerStart = (duration: number = 60) => {
-    socket?.emit("admin:explicit_timer_start", { duration }, (res) => {
-      if (res.success) setLastEvent(`Open Challenge timer started (${duration}s)`);
+  const startTaskTimer = (duration?: number) => {
+    if (!socket || taskTimerBusy) return;
+    setTaskTimerBusy(true);
+    const d = duration ?? taskTimerDuration;
+    socket.emit("admin:start_task_timer", { duration: d }, (res) => {
+      setTaskTimerBusy(false);
+      if (res.success) {
+        setLastEvent(`Task Timer started (${d}s)`);
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to start task timer"}`);
+      }
     });
   };
 
-  const explicitTimerPause = () => {
-    socket?.emit("admin:explicit_timer_pause", {}, (res) => {
-      if (res.success) setLastEvent("Open Challenge timer paused");
+  const pauseTaskTimer = () => {
+    if (!socket || taskTimerBusy) return;
+    setTaskTimerBusy(true);
+    socket.emit("admin:pause_task_timer", {}, (res) => {
+      setTaskTimerBusy(false);
+      if (res.success) setLastEvent("Task Timer paused / resumed");
     });
   };
 
-  const explicitTimerAdd30 = () => {
-    socket?.emit("admin:explicit_timer_adjust", { seconds: 30 }, (res) => {
-      if (res.success) setLastEvent("Open Challenge timer +30s");
+  const adjustTaskTimer = (seconds: number = 30) => {
+    if (!socket || taskTimerBusy) return;
+    setTaskTimerBusy(true);
+    socket.emit("admin:adjust_task_timer", { seconds }, (res) => {
+      setTaskTimerBusy(false);
+      if (res.success) setLastEvent(`Task Timer +${seconds}s`);
     });
   };
 
-  const explicitTimerStop = () => {
-    socket?.emit("admin:explicit_timer_stop", {}, (res) => {
-      if (res.success) setLastEvent("Open Challenge timer stopped");
+  const stopTaskTimer = () => {
+    if (!socket || taskTimerBusy) return;
+    setTaskTimerBusy(true);
+    socket.emit("admin:stop_task_timer", {}, (res) => {
+      setTaskTimerBusy(false);
+      if (res.success) setLastEvent("Task Timer stopped");
+    });
+  };
+
+  const triggerFailWithFallback = () => {
+    if (!socket || taskPending) return;
+    setTaskPending(true);
+    socket.emit("admin:fail_with_fallback", {}, (res) => {
+      setTaskPending(false);
+      if (res.success) {
+        setLastEvent("Task failed with fallback enabled! Winner gets 0 pts.");
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to enable fallback"}`);
+      }
+    });
+  };
+
+  const startExtraTimer = (duration?: number, label?: string) => {
+    if (!socket || extraTimerBusy) return;
+    setExtraTimerBusy(true);
+    const d = duration ?? extraTimerDuration;
+    const l = label ?? extraTimerLabel;
+    socket.emit("admin:start_extra_timer", { duration: d, label: l }, (res) => {
+      setExtraTimerBusy(false);
+      if (res.success) {
+        setLastEvent(`${l} started (${d}s)`);
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to start extra timer"}`);
+      }
+    });
+  };
+
+  const pauseExtraTimer = () => {
+    if (!socket || extraTimerBusy) return;
+    setExtraTimerBusy(true);
+    socket.emit("admin:pause_extra_timer", {}, (res) => {
+      setExtraTimerBusy(false);
+      if (res.success) setLastEvent("Extra Timer paused / resumed");
+    });
+  };
+
+  const adjustExtraTimer = (seconds: number = 30) => {
+    if (!socket || extraTimerBusy) return;
+    setExtraTimerBusy(true);
+    socket.emit("admin:adjust_extra_timer", { seconds }, (res) => {
+      setExtraTimerBusy(false);
+      if (res.success) setLastEvent(`Extra Timer +${seconds}s`);
+    });
+  };
+
+  const stopExtraTimer = () => {
+    if (!socket || extraTimerBusy) return;
+    setExtraTimerBusy(true);
+    socket.emit("admin:stop_extra_timer", {}, (res) => {
+      setExtraTimerBusy(false);
+      if (res.success) setLastEvent("Extra Timer stopped");
+    });
+  };
+
+  const submitFallbackPass = () => {
+    if (!socket || !fallbackTeamId || fallbackBusy) return;
+    setFallbackBusy(true);
+    socket.emit("admin:fallback_pass", { teamId: fallbackTeamId }, (res) => {
+      setFallbackBusy(false);
+      if (res.success) {
+        setLastEvent("Fallback awarded successfully! Round moved to result display.");
+        setFallbackTeamId("");
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to award fallback"}`);
+      }
+    });
+  };
+
+  const submitFallbackFail = () => {
+    if (!socket || fallbackBusy) return;
+    setFallbackBusy(true);
+    socket.emit("admin:fallback_fail", {}, (res) => {
+      setFallbackBusy(false);
+      if (res.success) {
+        setLastEvent("Fallback ended (No Winner). Round moved to result display.");
+        fetchScoreboard();
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to conclude fallback"}`);
+      }
     });
   };
 
@@ -1195,13 +1273,123 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
         {/* Row 3: Task Control (6) + Scoreboard (6) */}
         <Card title="Task Control & Resolution" span={6}>
-          {phase === "main_task" || ((phase as any) === "task" && task) ? (
+          {phase === "post_bid_idle" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
-                  {phaseWinner?.teamName || task?.teamName || "Winning Team"}
+                  {phaseWinner?.teamName || "Winning Team"}
                 </span>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: "rgba(235, 94, 40, 0.15)", color: C.accent, border: `1px solid ${C.accent}` }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.accent}20`, color: C.accent, border: `1px solid ${C.accent}` }}>
+                  AUCTION WON · STANDBY
+                </span>
+              </div>
+
+              {phaseQuestion && (
+                <div style={{ fontSize: "0.875rem", color: C.muted, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                  <span>Question: <strong>{phaseQuestion.id}</strong></span>
+                  <span>Reward: <strong>{phaseQuestion.reward} pts</strong></span>
+                  <span>Winning Bid: <strong>{phaseBid ?? currentBid} coins</strong> (deducted)</span>
+                </div>
+              )}
+
+              <div style={{
+                padding: "10px 14px", borderRadius: "8px",
+                backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
+                fontSize: "0.85rem", color: C.text,
+              }}>
+                Coins have been deducted from <strong>{phaseWinner?.teamName || "winner"}</strong>. Task timer does <strong>NOT</strong> start automatically. Start the timer below when ready.
+              </div>
+
+              {/* Start Task Timer Controls */}
+              <div style={{
+                padding: "1rem", borderRadius: "0.75rem",
+                backgroundColor: C.bg, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.75rem",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.primary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Start Task Timer
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <label style={{ fontSize: "0.8rem", color: C.muted, fontWeight: 600 }}>Duration:</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={600}
+                      value={taskTimerDuration}
+                      onChange={(e) => setTaskTimerDuration(Math.max(5, parseInt(e.target.value, 10) || 60))}
+                      disabled={taskTimerBusy}
+                      style={{
+                        width: "70px", padding: "4px 8px", borderRadius: "6px",
+                        border: `1px solid ${C.border}`, backgroundColor: C.surface, color: C.text,
+                        fontFamily: F.mono, fontWeight: 700, textAlign: "center",
+                      }}
+                    />
+                    <span style={{ fontSize: "0.8rem", color: C.muted }}>sec</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => startTaskTimer(taskTimerDuration)}
+                  disabled={taskTimerBusy}
+                  style={{
+                    width: "100%", padding: "0.9rem", borderRadius: "0.75rem",
+                    border: "none", backgroundColor: C.primary, color: "#fff",
+                    fontSize: "1.05rem", fontWeight: 800, cursor: taskTimerBusy ? "not-allowed" : "pointer",
+                    opacity: taskTimerBusy ? 0.6 : 1, transition: "all 0.2s ease",
+                  }}
+                >
+                  ▶ Start Task Timer ({taskTimerDuration}s)
+                </button>
+              </div>
+
+              {/* Direct Verdict Options */}
+              <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
+                <button
+                  onClick={passTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.8rem", borderRadius: "0.75rem",
+                    border: "none", backgroundColor: C.success, color: C.bg,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  PASS (Direct Pass, +{phaseQuestion?.reward ?? 100} pts)
+                </button>
+                <button
+                  onClick={failTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.8rem", borderRadius: "0.75rem",
+                    border: "none", backgroundColor: C.danger, color: C.bg,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  FAIL (Direct Fail, 0 pts)
+                </button>
+                <button
+                  onClick={triggerFailWithFallback}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.8rem", borderRadius: "0.75rem",
+                    border: `1.5px solid ${C.accent}`, backgroundColor: `${C.accent}15`, color: C.accent,
+                    fontSize: "0.95rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  Fail Winner → Open Fallback Round
+                </button>
+              </div>
+            </div>
+          ) : phase === "main_task" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  {phaseWinner?.teamName || "Winning Team"}
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.primary}20`, color: C.primary, border: `1px solid ${C.primary}` }}>
                   MAIN TASK ACTIVE
                 </span>
               </div>
@@ -1214,206 +1402,309 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                 </div>
               )}
 
+              {/* Timer Display */}
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem", borderRadius: "0.75rem", backgroundColor: C.bg, border: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.25rem" }}>
-                  Main Task Timer
+                  Task Time Remaining {mainTaskTimer?.isRunning === false ? "(PAUSED)" : ""}
                 </div>
                 <div style={{ ...styles.taskTimer, color: ((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0) <= 30 ? C.danger : C.primary }}>
                   {formatClock((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0)}
                 </div>
                 {(((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0) <= 0) && (
-                  <div style={{ ...styles.timeUpNote, marginTop: "0.5rem" }}>Time Up — Verdict Allowed</div>
+                  <div style={{ ...styles.timeUpNote, marginTop: "0.5rem" }}>Time Expired (Sound Played) — Ready for Verdict</div>
                 )}
               </div>
 
-              {/* Optional Explicit Timer Controls (usable anytime without phase change) */}
-              <div style={{
-                padding: "0.85rem", borderRadius: "0.5rem",
-                backgroundColor: C.bg, border: `1px solid ${C.border}`,
-                display: "flex", flexDirection: "column", gap: "0.5rem",
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Open Challenge Timer (Optional)
-                  </span>
-                  {(explicitTimer || sideTaskTimer) && (explicitTimer || sideTaskTimer)!.remaining > 0 && (
-                    <span style={{ fontSize: "0.85rem", fontWeight: 800, color: C.accent }}>
-                      {formatClock((explicitTimer || sideTaskTimer)!.remaining)} ({(explicitTimer || sideTaskTimer)!.isRunning ? "Running" : "Paused"})
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                  <button onClick={() => explicitTimerStart(60)} style={{ ...styles.timerBtn, flex: 1 }}>Start 60s</button>
-                  <button onClick={explicitTimerPause} style={{ ...styles.timerBtn, flex: 1 }}>Pause</button>
-                  <button onClick={explicitTimerAdd30} style={{ ...styles.timerBtn, flex: 1 }}>+30s</button>
-                  <button onClick={explicitTimerStop} style={{ ...styles.timerBtn, flex: 1, backgroundColor: `${C.danger}30`, borderColor: C.danger, color: C.danger }}>Stop</button>
-                </div>
+              {/* Task Timer Controls */}
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button onClick={pauseTaskTimer} disabled={taskTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
+                  {mainTaskTimer?.isRunning === false ? "Resume" : "Pause"}
+                </button>
+                <button onClick={() => adjustTaskTimer(30)} disabled={taskTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
+                  +30s
+                </button>
+                <button onClick={stopTaskTimer} disabled={taskTimerBusy} style={{ ...styles.timerBtn, flex: 1, backgroundColor: `${C.danger}30`, borderColor: C.danger, color: C.danger }}>
+                  Stop
+                </button>
               </div>
 
-              {/* VERDICT SECTION */}
-              {!(taskFailedLocally || task?.result === "fail") ? (
-                /* Primary verdict before fail */
-                <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
-                  <button
-                    onClick={passTask}
-                    disabled={taskPending}
+              {/* Verdict Section */}
+              <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column", marginTop: "0.5rem" }}>
+                <button
+                  onClick={passTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.875rem", borderRadius: "0.75rem",
+                    border: "none", backgroundColor: C.success, color: C.bg,
+                    fontSize: "1.05rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  PASS (+{phaseQuestion?.reward ?? 100} pts to {phaseWinner?.teamName || "Winner"})
+                </button>
+
+                <button
+                  onClick={failTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.875rem", borderRadius: "0.75rem",
+                    border: "none", backgroundColor: C.danger, color: C.bg,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  Direct FAIL (0 pts, End Round)
+                </button>
+
+                <button
+                  onClick={triggerFailWithFallback}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.875rem", borderRadius: "0.75rem",
+                    border: `1.5px solid ${C.accent}`, backgroundColor: `${C.accent}15`, color: C.accent,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  FAIL Winner → Open Fallback Round
+                </button>
+              </div>
+            </div>
+          ) : phase === "fallback_idle" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  FALLBACK ROUND (STANDBY)
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.danger}20`, color: C.danger, border: `1px solid ${C.danger}` }}>
+                  WINNER FAILED (0 PTS)
+                </span>
+              </div>
+
+              <div style={{
+                padding: "10px 14px", borderRadius: "8px",
+                backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}40`,
+                fontSize: "0.85rem", color: C.text,
+              }}>
+                Primary team {phaseWinner?.teamName ? `(${phaseWinner.teamName})` : ""} failed. Fallback is open to other teams. Start Extra Timer when ready.
+              </div>
+
+              {/* Extra Timer Setup */}
+              <div style={{
+                padding: "1rem", borderRadius: "0.75rem",
+                backgroundColor: C.bg, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.75rem",
+              }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Start Extra Timer
+                </span>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <input
+                    type="text"
+                    placeholder="Timer Label (e.g. Extra Timer)"
+                    value={extraTimerLabel}
+                    onChange={(e) => setExtraTimerLabel(e.target.value)}
+                    disabled={extraTimerBusy}
                     style={{
-                      width: "100%",
-                      padding: "0.875rem",
-                      borderRadius: "0.75rem",
-                      border: "none",
-                      backgroundColor: C.success,
-                      color: C.bg,
-                      fontSize: "1.1rem",
-                      fontWeight: 800,
-                      cursor: taskPending ? "not-allowed" : "pointer",
-                      opacity: taskPending ? 0.6 : 1,
+                      flex: 1, padding: "8px 12px", borderRadius: "6px",
+                      border: `1px solid ${C.border}`, backgroundColor: C.surface, color: C.text,
+                      fontFamily: F.body, fontSize: "0.85rem",
                     }}
-                  >
-                    PASS (+{phaseQuestion?.reward ?? task?.defaultReward ?? 100} pts)
-                  </button>
-
-                  {!failArmed ? (
-                    <button
-                      onClick={() => setFailArmed(true)}
-                      disabled={taskPending}
-                      style={{
-                        width: "100%",
-                        padding: "0.875rem",
-                        borderRadius: "0.75rem",
-                        border: "none",
-                        backgroundColor: C.danger,
-                        color: C.bg,
-                        fontSize: "1.05rem",
-                        fontWeight: 800,
-                        cursor: taskPending ? "not-allowed" : "pointer",
-                        opacity: taskPending ? 0.6 : 1,
-                      }}
-                    >
-                      FAIL (0 pts to {phaseWinner?.teamName || task?.teamName || "Winner"})
-                    </button>
-                  ) : (
-                    <div style={styles.confirmRow}>
-                      <span style={styles.confirmText}>
-                        Confirm FAIL? {phaseWinner?.teamName || task?.teamName} receives 0 points.
-                      </span>
-                      <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <button
-                          onClick={failTask}
-                          disabled={taskPending}
-                          style={{ ...styles.failBtn, flex: 1 }}
-                        >
-                          Confirm FAIL
-                        </button>
-                        <button
-                          onClick={() => setFailArmed(false)}
-                          disabled={taskPending}
-                          style={{ ...styles.cancelBtn, flex: 1 }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  />
+                  <input
+                    type="number"
+                    min={5}
+                    max={600}
+                    value={extraTimerDuration}
+                    onChange={(e) => setExtraTimerDuration(Math.max(5, parseInt(e.target.value, 10) || 60))}
+                    disabled={extraTimerBusy}
+                    style={{
+                      width: "70px", padding: "8px 6px", borderRadius: "6px",
+                      border: `1px solid ${C.border}`, backgroundColor: C.surface, color: C.text,
+                      fontFamily: F.mono, fontWeight: 700, textAlign: "center",
+                    }}
+                  />
+                  <span style={{ fontSize: "0.8rem", color: C.muted }}>sec</span>
                 </div>
-              ) : (
-                /* AFTER FAIL: OPTION A or OPTION B */
-                <div style={{
-                  display: "flex", flexDirection: "column", gap: "1rem",
-                  padding: "1rem", borderRadius: "0.75rem",
-                  border: `2px solid ${C.danger}`, backgroundColor: `${C.danger}08`,
-                }}>
-                  <div style={{ fontWeight: 800, color: C.danger, fontSize: "0.95rem" }}>
-                    ⚠️ {phaseWinner?.teamName || task?.teamName || "Winning Team"} FAILED (0 pts awarded). Choose resolution:
-                  </div>
+                <button
+                  onClick={() => startExtraTimer(extraTimerDuration, extraTimerLabel)}
+                  disabled={extraTimerBusy}
+                  style={{
+                    width: "100%", padding: "0.85rem", borderRadius: "0.75rem",
+                    border: "none", backgroundColor: C.accent, color: "#fff",
+                    fontSize: "1rem", fontWeight: 800, cursor: extraTimerBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  ▶ Start Extra Timer ({extraTimerDuration}s)
+                </button>
+              </div>
 
-                  {/* Option A */}
-                  <div style={{
+              {/* Fallback Team Selection & Award */}
+              <div style={{
+                padding: "1rem", borderRadius: "0.75rem",
+                backgroundColor: C.surface, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.75rem",
+              }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.text }}>
+                  Award Fallback to Solving Team
+                </span>
+                <select
+                  value={fallbackTeamId}
+                  onChange={(e) => setFallbackTeamId(e.target.value)}
+                  disabled={fallbackBusy}
+                  style={{
+                    width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.5rem",
+                    border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <option value="">-- Select team who solved --</option>
+                  {scoreboard
+                    .filter((t) => t.teamId !== phaseWinner?.teamId)
+                    .map((t) => (
+                      <option key={t.teamId} value={t.teamId}>
+                        {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  onClick={submitFallbackPass}
+                  disabled={!fallbackTeamId || fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.5rem", border: "none",
+                    backgroundColor: C.success, color: C.bg, fontWeight: 800, fontSize: "0.95rem",
+                    cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
+                    opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
+                  }}
+                >
+                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                </button>
+
+                <button
+                  onClick={submitFallbackFail}
+                  disabled={fallbackBusy}
+                  style={{
                     padding: "0.75rem", borderRadius: "0.5rem",
-                    backgroundColor: C.surface, border: `1px solid ${C.border}`,
-                    display: "flex", flexDirection: "column", gap: "0.5rem",
-                  }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.9rem", color: C.text }}>
-                      Option A: End Normally (No Reward)
-                    </span>
-                    <p style={{ fontSize: "0.8rem", color: C.muted, margin: 0 }}>
-                      Close this round immediately with 0 reward points awarded to any team.
-                    </p>
-                    <button
-                      onClick={endFailedTask}
-                      disabled={endRoundBusy}
-                      style={{
-                        padding: "0.75rem",
-                        borderRadius: "0.5rem",
-                        border: `1px solid ${C.border}`,
-                        backgroundColor: "transparent",
-                        color: C.text,
-                        fontWeight: 700,
-                        fontSize: "0.9rem",
-                        cursor: endRoundBusy ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      End Round (No Winner)
-                    </button>
-                  </div>
+                    border: `1px solid ${C.border}`, backgroundColor: "transparent", color: C.text,
+                    fontWeight: 700, fontSize: "0.9rem", cursor: fallbackBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  No Team Solved (End Fallback with 0 pts)
+                </button>
+              </div>
+            </div>
+          ) : phase === "fallback_active" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  FALLBACK IN PROGRESS
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.accent}20`, color: C.accent, border: `1px solid ${C.accent}` }}>
+                  EXTRA TIMER RUNNING
+                </span>
+              </div>
 
-                  {/* Option B */}
-                  <div style={{
-                    padding: "0.75rem", borderRadius: "0.5rem",
-                    backgroundColor: C.surface, border: `1px solid ${C.accent}`,
-                    display: "flex", flexDirection: "column", gap: "0.5rem",
-                  }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.9rem", color: C.accent }}>
-                      Option B: Fallback (Award to Another Team)
-                    </span>
-                    <p style={{ fontSize: "0.8rem", color: C.muted, margin: 0 }}>
-                      Optionally run the Open Challenge timer above, then select which team answered correctly.
-                    </p>
-                    <select
-                      value={fallbackTeamId}
-                      onChange={(e) => setFallbackTeamId(e.target.value)}
-                      disabled={fallbackBusy}
-                      style={{
-                        width: "100%",
-                        padding: "0.6rem 0.75rem",
-                        borderRadius: "0.5rem",
-                        border: `1px solid ${C.border}`,
-                        backgroundColor: C.bg,
-                        color: C.text,
-                        fontSize: "0.9rem",
-                        outline: "none",
-                      }}
-                    >
-                      <option value="">-- Choose fallback team --</option>
-                      {scoreboard
-                        .filter((t) => t.teamId !== phaseWinner?.teamId)
-                        .map((t) => (
-                          <option key={t.teamId} value={t.teamId}>
-                            {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
-                          </option>
-                        ))}
-                    </select>
-
-                    <button
-                      onClick={assignFallback}
-                      disabled={!fallbackTeamId || fallbackBusy}
-                      style={{
-                        padding: "0.75rem",
-                        borderRadius: "0.5rem",
-                        border: "none",
-                        backgroundColor: C.success,
-                        color: C.bg,
-                        fontWeight: 800,
-                        fontSize: "0.95rem",
-                        cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
-                        opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
-                      }}
-                    >
-                      Award Reward (+{phaseQuestion?.reward ?? 100} pts) & End Round
-                    </button>
-                  </div>
+              {/* Extra Timer Display */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem", borderRadius: "0.75rem", backgroundColor: C.bg, border: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.25rem" }}>
+                  {extraTimer?.label?.toUpperCase() || "EXTRA TIMER"} {extraTimer?.isRunning === false ? "(PAUSED)" : ""}
                 </div>
-              )}
+                <div style={{ ...styles.taskTimer, color: (extraTimer?.remaining ?? 0) <= 30 ? C.danger : C.accent }}>
+                  {formatClock(extraTimer?.remaining ?? 0)}
+                </div>
+                {((extraTimer?.remaining ?? 0) <= 0) && (
+                  <div style={{ ...styles.timeUpNote, marginTop: "0.5rem" }}>Extra Time Expired (Sound Played)</div>
+                )}
+              </div>
+
+              {/* Extra Timer Controls */}
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button onClick={pauseExtraTimer} disabled={extraTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
+                  {extraTimer?.isRunning === false ? "Resume" : "Pause"}
+                </button>
+                <button onClick={() => adjustExtraTimer(30)} disabled={extraTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
+                  +30s
+                </button>
+                <button onClick={stopExtraTimer} disabled={extraTimerBusy} style={{ ...styles.timerBtn, flex: 1, backgroundColor: `${C.danger}30`, borderColor: C.danger, color: C.danger }}>
+                  Stop
+                </button>
+              </div>
+
+              {/* Fallback Award / Fail */}
+              <div style={{
+                padding: "1rem", borderRadius: "0.75rem",
+                backgroundColor: C.surface, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.75rem",
+              }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.text }}>
+                  Award Fallback to Solving Team
+                </span>
+                <select
+                  value={fallbackTeamId}
+                  onChange={(e) => setFallbackTeamId(e.target.value)}
+                  disabled={fallbackBusy}
+                  style={{
+                    width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.5rem",
+                    border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <option value="">-- Select team who solved --</option>
+                  {scoreboard
+                    .filter((t) => t.teamId !== phaseWinner?.teamId)
+                    .map((t) => (
+                      <option key={t.teamId} value={t.teamId}>
+                        {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  onClick={submitFallbackPass}
+                  disabled={!fallbackTeamId || fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.5rem", border: "none",
+                    backgroundColor: C.success, color: C.bg, fontWeight: 800, fontSize: "0.95rem",
+                    cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
+                    opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
+                  }}
+                >
+                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                </button>
+
+                <button
+                  onClick={submitFallbackFail}
+                  disabled={fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.5rem",
+                    border: `1px solid ${C.border}`, backgroundColor: "transparent", color: C.text,
+                    fontWeight: 700, fontSize: "0.9rem", cursor: fallbackBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  No Team Solved (End Fallback with 0 pts)
+                </button>
+              </div>
+            </div>
+          ) : phase === "result_display" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1.5rem" }}>
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, color: C.success }}>
+                RESULT DISPLAY LOCKED (5.0s)
+              </div>
+              <div style={{ fontSize: "0.9rem", color: C.muted }}>
+                Verdict is currently displayed on all screens. The system will automatically reset to idle in 5 seconds.
+              </div>
+              <button
+                onClick={endRound}
+                disabled={endRoundBusy}
+                style={{
+                  ...styles.startBtn,
+                  backgroundColor: C.primary,
+                  marginTop: "0.5rem",
+                }}
+              >
+                Force Reset Now (Bypass 5s)
+              </button>
             </div>
           ) : phase === "ended" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1rem" }}>
@@ -1446,7 +1737,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                 {formatClock((biddingTimer ? biddingTimer.remaining : timer) ?? 0)}
               </div>
               <div style={{ fontSize: "0.85rem", color: C.muted }}>
-                Main task timer will start automatically upon winning bid.
+                Auction timer is running. On win, coins will be deducted and round will wait for admin to start task timer.
               </div>
             </div>
           ) : (
