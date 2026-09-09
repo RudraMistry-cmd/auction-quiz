@@ -9,18 +9,28 @@ const C = tokens.color;
 const F = tokens.font;
 
 interface TeamScreenProps {
-  sessionToken: string | null;
-  onLogout: () => void;
+  sessionToken?: string | null;
 }
 
 /* ─── Sub-components ─── */
 
-function TeamHeaderBar({ teamName, onLogout }: { teamName: string; onLogout: () => void }) {
+function TeamHeaderBar({ teamName, connected }: { teamName: string; connected: boolean }) {
   return (
     <div style={dashHeaderContainer}>
       <div style={dashTopRow}>
         <BrandHeader variant="compact" />
-        <button onClick={onLogout} style={btnGhost}>Logout</button>
+        <div style={{
+          display: "flex", alignItems: "center", gap: "6px",
+          fontFamily: F.body, fontSize: "0.8rem", fontWeight: 600,
+          color: connected ? C.success : C.danger,
+        }}>
+          <span style={{
+            width: "8px", height: "8px", borderRadius: "50%",
+            backgroundColor: connected ? C.success : C.danger,
+            boxShadow: connected ? `0 0 6px ${C.success}` : "none",
+          }} />
+          <span>{connected ? "Connected" : "Offline"}</span>
+        </div>
       </div>
       <div style={dashTeamName}>{teamName}</div>
     </div>
@@ -181,7 +191,7 @@ function FeedbackToast({ message }: { message: { type: "success" | "error"; text
 }
 
 /* ─── Main Screen ─── */
-export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) {
+export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   const {
     socket,
     connected,
@@ -285,8 +295,9 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
   // Auto-reconnect
   useEffect(() => {
     if (!connected || !socket) return;
-    if (sessionToken) {
-      socket.emit("client:reconnect", { sessionToken }, (res: any) => {
+    const token = sessionToken || localStorage.getItem("sessionToken");
+    if (token) {
+      socket.emit("client:reconnect", { sessionToken: token }, (res: any) => {
         if (res.success && res.team) {
           setTeam(res.team);
           setCoins(res.team.bid_coins);
@@ -296,8 +307,6 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
             setCurrentBid(res.currentBid || res.currentAuction.startBid);
             setTimer(res.timer || 0);
           }
-        } else {
-          onLogout();
         }
       });
     }
@@ -597,7 +606,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
+        <TeamHeaderBar teamName={team.teamName} connected={connected} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -666,7 +675,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
+        <TeamHeaderBar teamName={team.teamName} connected={connected} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -697,7 +706,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
+        <TeamHeaderBar teamName={team.teamName} connected={connected} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -742,7 +751,7 @@ export default function TeamScreen({ sessionToken, onLogout }: TeamScreenProps) 
       <FeedbackToast message={bidMessage} />
 
       {/* Team Header */}
-      <TeamHeaderBar teamName={team.teamName} onLogout={onLogout} />
+      <TeamHeaderBar teamName={team.teamName} connected={connected} />
 
       {/* Timer */}
       <div style={{ marginBottom: "24px" }}>
@@ -889,15 +898,6 @@ const dashTeamName: React.CSSProperties = {
 
 const dashStatRow: React.CSSProperties = {
   display: "flex", gap: "20px", justifyContent: "center",
-  flexWrap: "wrap",
-};
-
-const btnGhost: React.CSSProperties = {
-  fontFamily: F.body, fontWeight: 600, fontSize: "0.8rem",
-  padding: "8px 16px", borderRadius: tokens.radius.sm,
-  border: `1px solid ${C.border}`, backgroundColor: "transparent",
-  color: C.muted, cursor: "pointer",
-  transition: `all ${tokens.transition.fast}`,
 };
 
 /* ─── SVG Icons ─── */

@@ -1,5 +1,4 @@
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import { useState } from "react";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import TeamScreen from "./pages/TeamScreen";
 import AdminScreen from "./pages/AdminScreen";
@@ -16,25 +15,12 @@ export const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || "7f8a9b2c";
 export const ADMIN_ROUTE = `/control-panel-${ADMIN_SECRET}`;
 
 function App() {
-  const [sessionToken, setSessionToken] = useState<string | null>(
-    () => localStorage.getItem("sessionToken")
-  );
-
-  const handleLogout = () => {
-    localStorage.removeItem("sessionToken");
-    localStorage.removeItem("teamId");
-    setSessionToken(null);
-  };
-
   return (
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
-        <Route
-          path="/team"
-          element={<TeamScreen sessionToken={sessionToken} onLogout={handleLogout} />}
-        />
+          <Route path="/team" element={<TeamScreen />} />
         {/* Non-guessable control panel route */}
         <Route path={ADMIN_ROUTE} element={<AdminScreen adminSecret={ADMIN_SECRET} />} />
         <Route path="/display" element={<DisplayChooser />} />
