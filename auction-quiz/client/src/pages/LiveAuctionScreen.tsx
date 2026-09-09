@@ -312,9 +312,11 @@ export default function LiveAuctionScreen() {
   const {
     socket,
     connected,
+    connectionStatus,
     phase,
     currentQuestion,
     currentBid: gameBid,
+    leadingTeam: phaseLeadingTeam,
     winningTeam,
     biddingTimer,
     mainTaskTimer,
@@ -325,6 +327,7 @@ export default function LiveAuctionScreen() {
     taskEnded,
     taskPaused,
     lastResult,
+    activeAuction,
   } = useGamePhase();
 
   const [auction, setAuction] = useState<(Auction & { currentBid?: number; leadingTeam?: string }) | null>(null);
@@ -338,16 +341,40 @@ export default function LiveAuctionScreen() {
   const [manualTimer, setManualTimer] = useState({ isRunning: false, timeLeft: 0 });
   const prevBid = useRef(0);
 
-  // Sync gameBid & winningTeam from phase
+  // Sync gameBid, leadingTeam, winningTeam, question, auction from useGamePhase
   useEffect(() => {
-    if (gameBid) setCurrentBid(gameBid);
+    if (gameBid !== undefined && gameBid !== null) setCurrentBid(gameBid);
   }, [gameBid]);
+
+  useEffect(() => {
+    if (phaseLeadingTeam !== undefined) setLeadingTeam(phaseLeadingTeam || "");
+  }, [phaseLeadingTeam]);
 
   useEffect(() => {
     if (winningTeam) {
       setWinner({ teamName: winningTeam.teamName, bid: gameBid || currentBid });
+    } else {
+      setWinner(null);
     }
   }, [winningTeam, gameBid, currentBid]);
+
+  useEffect(() => {
+    if (currentQuestion?.image) {
+      setQuestionImage(currentQuestion.image);
+    }
+  }, [currentQuestion]);
+
+  useEffect(() => {
+    if (activeAuction) {
+      setAuction(activeAuction);
+    }
+  }, [activeAuction]);
+
+  useEffect(() => {
+    if (biddingTimer && biddingTimer.remaining !== undefined) {
+      setTimer(biddingTimer.remaining);
+    }
+  }, [biddingTimer?.remaining]);
 
   // Socket listeners
   useEffect(() => {
@@ -410,25 +437,48 @@ export default function LiveAuctionScreen() {
       localStorage.setItem("theme", data.theme);
     };
 
+    const handleFullState = (data: any) => {
+      if (data.activeAuction) setAuction(data.activeAuction);
+      if (data.currentBid !== undefined) setCurrentBid(data.currentBid);
+      if (data.leadingTeam) setLeadingTeam(data.leadingTeam);
+      if (data.currentQuestion?.image) setQuestionImage(data.currentQuestion.image);
+      if (data.timers?.bidding?.remaining !== undefined) setTimer(data.timers.bidding.remaining);
+    };
+
+    const handleQuestionChanged = (data: any) => {
+      if (data.imagePath) setQuestionImage(data.imagePath);
+      else if (data.question?.image) setQuestionImage(data.question.image);
+    };
+
+    socket.on("state:full" as any, handleFullState);
     socket.on("auction:started", handleStarted);
+    socket.on("auction:start" as any, handleStarted);
     socket.on("auction:bid_update", handleBidUpdate);
+    socket.on("bid:update" as any, handleBidUpdate);
     socket.on("auction:timer", handleTimer);
     socket.on("auction:ended", handleEnded);
+    socket.on("bid:win" as any, handleEnded);
     socket.on("auction:cleared", handleCleared);
     socket.on("manual_timer:update", handleManualTimer);
     socket.on("question:image_set", handleImageSet);
+    socket.on("question:changed" as any, handleQuestionChanged);
     socket.on("sound:settings", handleSoundSettings);
     socket.on("sound:per_setting", handleSoundPerSetting);
     socket.on("theme:changed", handleThemeChanged);
 
     return () => {
+      socket.off("state:full" as any, handleFullState);
       socket.off("auction:started", handleStarted);
+      socket.off("auction:start" as any, handleStarted);
       socket.off("auction:bid_update", handleBidUpdate);
+      socket.off("bid:update" as any, handleBidUpdate);
       socket.off("auction:timer", handleTimer);
       socket.off("auction:ended", handleEnded);
+      socket.off("bid:win" as any, handleEnded);
       socket.off("auction:cleared", handleCleared);
       socket.off("manual_timer:update", handleManualTimer);
       socket.off("question:image_set", handleImageSet);
+      socket.off("question:changed" as any, handleQuestionChanged);
       socket.off("sound:settings", handleSoundSettings);
       socket.off("sound:per_setting", handleSoundPerSetting);
       socket.off("theme:changed", handleThemeChanged);
@@ -583,8 +633,8 @@ export default function LiveAuctionScreen() {
                 }}>Waiting for Auction</div>
                 <div style={{
                   fontFamily: F.body, fontSize: "clamp(1rem, 2vw, 1.4rem)",
-                  color: "#94A3B8",
-                }}>{connected ? "Standby" : "Offline"}</div>
+                  color: connectionStatus === "connected" ? "#94A3B8" : connectionStatus === "reconnecting" ? C.warning : C.danger,
+                }}>{connectionStatus === "connected" ? "Standby" : connectionStatus === "reconnecting" ? "Reconnecting..." : "Offline"}</div>
               </motion.div>
             )}
           </div>

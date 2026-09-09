@@ -19,7 +19,12 @@ interface ScoreboardTeam {
 
 /* ─── Sub-components ─── */
 
-function Header({ connected }: { connected: boolean }) {
+function Header({ status }: { status: "connected" | "reconnecting" | "disconnected" }) {
+  const isConnected = status === "connected";
+  const isReconnecting = status === "reconnecting";
+  const badgeColor = isConnected ? C.success : isReconnecting ? C.warning : C.muted;
+  const badgeLabel = isConnected ? "Live" : isReconnecting ? "Reconnecting..." : "Offline";
+
   return (
     <header style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -34,15 +39,15 @@ function Header({ connected }: { connected: boolean }) {
       <div style={{
         display: "flex", alignItems: "center", gap: "8px",
         fontFamily: F.body, fontSize: "0.85rem", fontWeight: 600,
-        color: connected ? C.success : C.muted,
+        color: badgeColor,
       }}>
         <span style={{
           width: "10px", height: "10px", borderRadius: "50%",
-          backgroundColor: connected ? C.success : C.muted,
-          boxShadow: connected ? `0 0 8px ${C.success}` : "none",
+          backgroundColor: badgeColor,
+          boxShadow: isConnected ? `0 0 8px ${C.success}` : isReconnecting ? `0 0 8px ${C.warning}` : "none",
           transition: `all ${tokens.transition.base}`,
         }} />
-        {connected ? "Live" : "Offline"}
+        {badgeLabel}
       </div>
     </header>
   );
@@ -285,7 +290,7 @@ function TeamRow({
 
 /* ─── Main Screen ─── */
 export default function ScoreboardScreen() {
-  const { socket, connected } = useGamePhase();
+  const { socket, connected, connectionStatus, scoreboard: phaseScoreboard } = useGamePhase();
   const [teams, setTeams] = useState<ScoreboardTeam[]>([]);
   const [prevRanks, setPrevRanks] = useState<Record<string, number>>({});
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
@@ -323,6 +328,13 @@ export default function ScoreboardScreen() {
     setTeams(teamList);
   }, []);
 
+  // Sync when phaseScoreboard is populated
+  useEffect(() => {
+    if (phaseScoreboard && phaseScoreboard.length > 0) {
+      handleRefresh(phaseScoreboard as ScoreboardTeam[]);
+    }
+  }, [phaseScoreboard, handleRefresh]);
+
   useEffect(() => {
     if (!socket || !connected) return;
     let cancelled = false;
@@ -335,27 +347,47 @@ export default function ScoreboardScreen() {
     refresh();
     const id = setInterval(refresh, 5000);
 
-    const handleBid = () => refresh();
-    const handleEnded = () => refresh();
-    const handleScores = () => refresh();
+    const handleScoreUpdate = (data?: any) => {
+      const list = data?.teams || data?.scoreboard;
+      if (list && Array.isArray(list)) {
+        handleRefresh(list);
+      } else {
+        refresh();
+      }
+    };
+
     const handleThemeChanged = (data: { theme: string }) => {
       document.documentElement.setAttribute("data-theme", data.theme);
       localStorage.setItem("theme", data.theme);
     };
 
-    socket.on("auction:bid_update", handleBid);
-    socket.on("auction:ended", handleEnded);
-    socket.on("task:result", handleScores);
-    socket.on("scoreboard:updated", handleScores);
+    socket.on("auction:bid_update", () => refresh());
+    socket.on("bid:update" as any, () => refresh());
+    socket.on("auction:ended", () => refresh());
+    socket.on("bid:win" as any, () => refresh());
+    socket.on("task:result", handleScoreUpdate);
+    socket.on("scoreboard:updated", handleScoreUpdate);
+    socket.on("scoreboard:update" as any, handleScoreUpdate);
+    socket.on("team:update" as any, () => refresh());
+    socket.on("state:full" as any, (full: any) => {
+      if (full?.scoreboard) handleRefresh(full.scoreboard);
+    });
     socket.on("theme:changed", handleThemeChanged);
 
     return () => {
       cancelled = true;
       clearInterval(id);
-      socket.off("auction:bid_update", handleBid);
-      socket.off("auction:ended", handleEnded);
-      socket.off("task:result", handleScores);
-      socket.off("scoreboard:updated", handleScores);
+      socket.off("auction:bid_update", () => refresh());
+      socket.off("bid:update" as any, () => refresh());
+      socket.off("auction:ended", () => refresh());
+      socket.off("bid:win" as any, () => refresh());
+      socket.off("task:result", handleScoreUpdate);
+      socket.off("scoreboard:updated", handleScoreUpdate);
+      socket.off("scoreboard:update" as any, handleScoreUpdate);
+      socket.off("team:update" as any, () => refresh());
+      socket.off("state:full" as any, (full: any) => {
+        if (full?.scoreboard) handleRefresh(full.scoreboard);
+      });
       socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected, handleRefresh]);
@@ -392,7 +424,7 @@ export default function ScoreboardScreen() {
         }
       `}</style>
 
-      <Header connected={connected} />
+      <Header status={connectionStatus} />
 
       <div style={stage}>
         {sorted.length === 0 ? (

@@ -14,7 +14,13 @@ interface TeamScreenProps {
 
 /* ─── Sub-components ─── */
 
-function TeamHeaderBar({ teamName, connected }: { teamName: string; connected: boolean }) {
+function TeamHeaderBar({ teamName, connected, status }: { teamName: string; connected?: boolean; status?: "connected" | "reconnecting" | "disconnected" }) {
+  const currentStatus = status || (connected ? "connected" : "disconnected");
+  const isConnected = currentStatus === "connected";
+  const isReconnecting = currentStatus === "reconnecting";
+  const badgeColor = isConnected ? C.success : isReconnecting ? C.warning : C.danger;
+  const badgeLabel = isConnected ? "Connected" : isReconnecting ? "Reconnecting..." : "Offline";
+
   return (
     <div style={dashHeaderContainer}>
       <div style={dashTopRow}>
@@ -22,14 +28,14 @@ function TeamHeaderBar({ teamName, connected }: { teamName: string; connected: b
         <div style={{
           display: "flex", alignItems: "center", gap: "6px",
           fontFamily: F.body, fontSize: "0.8rem", fontWeight: 600,
-          color: connected ? C.success : C.danger,
+          color: badgeColor,
         }}>
           <span style={{
             width: "8px", height: "8px", borderRadius: "50%",
-            backgroundColor: connected ? C.success : C.danger,
-            boxShadow: connected ? `0 0 6px ${C.success}` : "none",
+            backgroundColor: badgeColor,
+            boxShadow: isConnected ? `0 0 6px ${C.success}` : isReconnecting ? `0 0 6px ${C.warning}` : "none",
           }} />
-          <span>{connected ? "Connected" : "Offline"}</span>
+          <span>{badgeLabel}</span>
         </div>
       </div>
       <div style={dashTeamName}>{teamName}</div>
@@ -195,9 +201,13 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   const {
     socket,
     connected,
+    connectionStatus,
     phase,
     currentQuestion,
+    currentBid: gameBid,
+    leadingTeam: phaseLeadingTeam,
     winningTeam,
+    biddingTimer,
     mainTaskTimer,
     sideTaskTimer,
     explicitTimer,
@@ -205,6 +215,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
     taskTimer,
     taskEnded,
     taskPaused,
+    activeAuction,
   } = useGamePhase();
   const [team, setTeam] = useState<Team | null>(null);
   const [auction, setAuction] = useState<Auction | null>(null);
@@ -221,6 +232,25 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
 
   const teamRef = useRef<Team | null>(null);
   teamRef.current = team;
+
+  // Auto-sync phase states to local team screen states
+  useEffect(() => {
+    if (gameBid !== undefined && gameBid !== null) setCurrentBid(gameBid);
+  }, [gameBid]);
+
+  useEffect(() => {
+    if (phaseLeadingTeam !== undefined) setLeadingTeam(phaseLeadingTeam || "");
+  }, [phaseLeadingTeam]);
+
+  useEffect(() => {
+    if (activeAuction) setAuction(activeAuction);
+  }, [activeAuction]);
+
+  useEffect(() => {
+    if (biddingTimer && biddingTimer.remaining !== undefined) {
+      setTimer(biddingTimer.remaining);
+    }
+  }, [biddingTimer?.remaining]);
 
   type FormField = "teamName" | "player1" | "player2" | "phone" | "email";
 
@@ -378,12 +408,52 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
       setTimeout(() => setBidMessage(null), 5000);
     };
 
+    const handleTeamUpdate = (data: { team: Team }) => {
+      if (data.team && data.team.teamId === teamRef.current?.teamId) {
+        setCoins(data.team.bid_coins);
+        setPoints(data.team.reward_points);
+        setTeam(data.team);
+      }
+    };
+
+    const handleScoreUpdate = (data?: any) => {
+      const list = data?.teams || data?.scoreboard;
+      if (list && Array.isArray(list) && teamRef.current) {
+        const found = list.find((t: any) => t.teamId === teamRef.current?.teamId);
+        if (found) {
+          setCoins(found.bid_coins);
+          setPoints(found.reward_points);
+        }
+      }
+    };
+
+    const handleFullState = (data: any) => {
+      if (data.activeAuction) setAuction(data.activeAuction);
+      if (data.currentBid !== undefined) setCurrentBid(data.currentBid);
+      if (data.leadingTeam) setLeadingTeam(data.leadingTeam);
+      if (data.timers?.bidding?.remaining !== undefined) setTimer(data.timers.bidding.remaining);
+      if (data.scoreboard && teamRef.current) {
+        const found = data.scoreboard.find((t: any) => t.teamId === teamRef.current?.teamId);
+        if (found) {
+          setCoins(found.bid_coins);
+          setPoints(found.reward_points);
+        }
+      }
+    };
+
+    socket.on("state:full" as any, handleFullState);
     socket.on("auction:started", handleStarted);
+    socket.on("auction:start" as any, handleStarted);
     socket.on("auction:bid_update", handleBidUpdate);
+    socket.on("bid:update" as any, handleBidUpdate);
     socket.on("auction:timer", handleTimer);
     socket.on("auction:ended", handleEnded);
+    socket.on("bid:win" as any, handleEnded);
     socket.on("auction:cleared", handleCleared);
     socket.on("task:result", handleTaskResult);
+    socket.on("team:update" as any, handleTeamUpdate);
+    socket.on("scoreboard:updated", handleScoreUpdate);
+    socket.on("scoreboard:update" as any, handleScoreUpdate);
 
     const handleThemeChanged = (data: { theme: string }) => {
       document.documentElement.setAttribute("data-theme", data.theme);
@@ -392,12 +462,19 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
     socket.on("theme:changed", handleThemeChanged);
 
     return () => {
+      socket.off("state:full" as any, handleFullState);
       socket.off("auction:started", handleStarted);
+      socket.off("auction:start" as any, handleStarted);
       socket.off("auction:bid_update", handleBidUpdate);
+      socket.off("bid:update" as any, handleBidUpdate);
       socket.off("auction:timer", handleTimer);
       socket.off("auction:ended", handleEnded);
+      socket.off("bid:win" as any, handleEnded);
       socket.off("auction:cleared", handleCleared);
       socket.off("task:result", handleTaskResult);
+      socket.off("team:update" as any, handleTeamUpdate);
+      socket.off("scoreboard:updated", handleScoreUpdate);
+      socket.off("scoreboard:update" as any, handleScoreUpdate);
       socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected]);
@@ -606,7 +683,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} connected={connected} />
+        <TeamHeaderBar teamName={team.teamName} connected={connected} status={connectionStatus} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -646,14 +723,21 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
           <div style={{
             marginTop: "20px", padding: "16px 24px", borderRadius: tokens.radius.lg,
             backgroundColor: `${C.accent}15`, border: `2px solid ${C.accent}`,
-            display: "flex", flexDirection: "column", alignItems: "center", gap: "6px",
+            textAlign: "center",
           }}>
-            <span style={{ fontSize: "0.8rem", fontWeight: 800, color: C.accent, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              {activeExplicit.label || "Open Challenge"}
-            </span>
-            <span style={{ fontFamily: F.heading, fontWeight: 900, fontSize: "2.2rem", color: "#FFFFFF" }}>
+            <div style={{
+              fontFamily: F.heading, fontWeight: 700, fontSize: "0.95rem",
+              color: C.accent, marginBottom: "8px", textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}>
+              Open Challenge Active
+            </div>
+            <div style={{
+              fontFamily: F.mono, fontWeight: 800, fontSize: "2.5rem",
+              color: activeExplicit.remaining <= 10 ? C.danger : C.accent,
+            }}>
               {formatClock(activeExplicit.remaining)}
-            </span>
+            </div>
             <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
               {isWinner ? "Open challenge running for other teams" : "Solve offline now — report solution to Admin!"}
             </span>
@@ -706,7 +790,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
         <FeedbackToast message={bidMessage} />
 
         {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} connected={connected} />
+        <TeamHeaderBar teamName={team.teamName} connected={connected} status={connectionStatus} />
 
         {/* Stat Cards */}
         <div style={dashStatRow}>
@@ -730,14 +814,14 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
         <div style={{
           marginTop: "24px",
           fontFamily: F.body, fontSize: "0.85rem",
-          color: connected ? C.success : C.danger,
+          color: connectionStatus === "connected" ? C.success : connectionStatus === "reconnecting" ? C.warning : C.danger,
           display: "flex", alignItems: "center", gap: "8px",
         }}>
           <div style={{
             width: "8px", height: "8px", borderRadius: "50%",
-            backgroundColor: connected ? C.success : C.danger,
+            backgroundColor: connectionStatus === "connected" ? C.success : connectionStatus === "reconnecting" ? C.warning : C.danger,
           }} />
-          {connected ? "Connected" : "Reconnecting..."}
+          {connectionStatus === "connected" ? "Connected" : connectionStatus === "reconnecting" ? "Reconnecting..." : "Offline"}
         </div>
       </div>
     );
@@ -751,7 +835,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
       <FeedbackToast message={bidMessage} />
 
       {/* Team Header */}
-      <TeamHeaderBar teamName={team.teamName} connected={connected} />
+      <TeamHeaderBar teamName={team.teamName} connected={connected} status={connectionStatus} />
 
       {/* Timer */}
       <div style={{ marginBottom: "24px" }}>

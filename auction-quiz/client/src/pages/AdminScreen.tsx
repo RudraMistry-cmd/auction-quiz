@@ -51,9 +51,11 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const {
     socket,
     connected,
+    connectionStatus,
     phase,
     currentQuestion: phaseQuestion,
     currentBid: phaseBid,
+    leadingTeam: phaseLeadingTeam,
     winningTeam: phaseWinner,
     biddingTimer,
     mainTaskTimer,
@@ -61,6 +63,8 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     explicitTimer,
     task,
     taskTimer,
+    activeAuction,
+    scoreboard: phaseScoreboard,
   } = useGamePhase();
   const [isAdminVerified, setIsAdminVerified] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -71,6 +75,25 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [scoreboard, setScoreboard] = useState<ScoreboardTeam[]>([]);
   const [lastEvent, setLastEvent] = useState<string>("");
   const [startArmed, setStartArmed] = useState(false);
+
+  // Sync state changes from useGamePhase
+  useEffect(() => {
+    if (phaseScoreboard && phaseScoreboard.length > 0) {
+      setScoreboard(phaseScoreboard);
+    }
+  }, [phaseScoreboard]);
+
+  useEffect(() => {
+    if (phaseBid !== undefined && phaseBid !== null) setCurrentBid(phaseBid);
+  }, [phaseBid]);
+
+  useEffect(() => {
+    if (phaseLeadingTeam !== undefined) setLeadingTeam(phaseLeadingTeam || "");
+  }, [phaseLeadingTeam]);
+
+  useEffect(() => {
+    if (activeAuction) setAuction(activeAuction);
+  }, [activeAuction]);
 
   // Manifest & Fallback state
   const [manifest, setManifest] = useState<any[]>([]);
@@ -250,12 +273,27 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       });
     };
 
+    const handleFullState = (data: any) => {
+      if (data.activeAuction) setAuction(data.activeAuction);
+      if (data.currentBid !== undefined) setCurrentBid(data.currentBid);
+      if (data.leadingTeam) setLeadingTeam(data.leadingTeam);
+      if (data.timers?.bidding?.remaining !== undefined) setTimer(data.timers.bidding.remaining);
+      if (data.scoreboard) setScoreboard(data.scoreboard);
+      fetchManifest();
+    };
+
+    socket.on("state:full" as any, handleFullState);
     socket.on("auction:started", handleStarted);
+    socket.on("auction:start" as any, handleStarted);
     socket.on("auction:bid_update", handleBidUpdate);
+    socket.on("bid:update" as any, handleBidUpdate);
     socket.on("auction:timer", handleTimer);
     socket.on("auction:ended", handleEnded);
+    socket.on("bid:win" as any, handleEnded);
     socket.on("task:result", handleScores);
     socket.on("scoreboard:updated", handleScores);
+    socket.on("scoreboard:update" as any, handleScores);
+    socket.on("team:update" as any, handleScores);
     socket.on("manual_timer:update", handleTimerUpdate);
 
     const handleThemeChanged = (data: { theme: string }) => {
@@ -265,12 +303,18 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     socket.on("theme:changed", handleThemeChanged);
 
     return () => {
+      socket.off("state:full" as any, handleFullState);
       socket.off("auction:started", handleStarted);
+      socket.off("auction:start" as any, handleStarted);
       socket.off("auction:bid_update", handleBidUpdate);
+      socket.off("bid:update" as any, handleBidUpdate);
       socket.off("auction:timer", handleTimer);
       socket.off("auction:ended", handleEnded);
+      socket.off("bid:win" as any, handleEnded);
       socket.off("task:result", handleScores);
       socket.off("scoreboard:updated", handleScores);
+      socket.off("scoreboard:update" as any, handleScores);
+      socket.off("team:update" as any, handleScores);
       socket.off("manual_timer:update", handleTimerUpdate);
       socket.off("theme:changed", handleThemeChanged);
     };
@@ -582,9 +626,18 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
             <span style={styles.verifiedBadge}>Host Verified</span>
           )}
         </div>
-        <span style={{ color: connected ? C.success : C.danger }}>
-          {connected ? "Connected" : "Disconnected"}
-        </span>
+        <div style={{
+          display: "flex", alignItems: "center", gap: "8px",
+          fontFamily: F.body, fontSize: "0.85rem", fontWeight: 600,
+          color: connectionStatus === "connected" ? C.success : connectionStatus === "reconnecting" ? C.warning : C.danger,
+        }}>
+          <span style={{
+            width: "8px", height: "8px", borderRadius: "50%",
+            backgroundColor: connectionStatus === "connected" ? C.success : connectionStatus === "reconnecting" ? C.warning : C.danger,
+            boxShadow: connectionStatus === "connected" ? `0 0 6px ${C.success}` : connectionStatus === "reconnecting" ? `0 0 6px ${C.warning}` : "none",
+          }} />
+          <span>{connectionStatus === "connected" ? "Connected" : connectionStatus === "reconnecting" ? "Reconnecting..." : "Disconnected"}</span>
+        </div>
       </div>
 
       {authError && (

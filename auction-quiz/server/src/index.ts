@@ -96,6 +96,19 @@ async function main() {
     }
   });
 
+  // Full sync state endpoint for polling fallback or initial load
+  const getStateHandler = async (_req: express.Request, res: express.Response) => {
+    try {
+      const fullState = await auctionControl.getFullSyncState();
+      res.json(fullState);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+
+  app.get("/state", getStateHandler);
+  app.get("/api/state", getStateHandler);
+
   // Manual timer state for display refresh
   app.get("/api/timer", (_req, res) => {
     try {
@@ -183,7 +196,12 @@ async function main() {
 
       // Sync updated coins/points with all connected screens
       const scoreboard = await teamService.getScoreboard();
+      io.emit("scoreboard:update", { teams: scoreboard });
       io.emit("scoreboard:updated", { teams: scoreboard });
+      if (result.team) {
+        io.emit("team:update", { team: result.team });
+      }
+      await auctionControl.broadcastFullState();
 
       res.json({ success: true, team: result.team });
     } catch (err: any) {
@@ -203,7 +221,9 @@ async function main() {
 
       // Sync scoreboard with all connected clients
       const scoreboard = await teamService.getScoreboard();
+      io.emit("scoreboard:update", { teams: scoreboard });
       io.emit("scoreboard:updated", { teams: scoreboard });
+      await auctionControl.broadcastFullState();
 
       res.json({ success: true });
     } catch (err: any) {

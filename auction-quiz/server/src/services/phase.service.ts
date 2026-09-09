@@ -13,6 +13,7 @@ class StateManager {
   private currentQuestion: QuestionManifestItem | null = null;
   private currentBid: number = 0;
   private winningTeam: { teamId: string; teamName: string } | null = null;
+  private leadingTeam: string = "";
   private manifest: QuestionManifestItem[] = [];
   private manifestPath: string = path.join(__dirname, "../../../questions/manifest.json");
 
@@ -72,6 +73,7 @@ class StateManager {
       phase: this.phase,
       currentQuestion: this.currentQuestion,
       currentBid: this.currentBid,
+      leadingTeam: this.leadingTeam,
       winningTeam: this.winningTeam,
       biddingTimer: timers.biddingTimer,
       mainTaskTimer: timers.mainTaskTimer,
@@ -103,6 +105,14 @@ class StateManager {
 
   public setCurrentBid(bid: number): void {
     this.currentBid = bid;
+  }
+
+  public getLeadingTeam(): string {
+    return this.leadingTeam;
+  }
+
+  public setLeadingTeam(teamName: string): void {
+    this.leadingTeam = teamName;
   }
 
   public getWinningTeam(): { teamId: string; teamName: string } | null {
@@ -162,6 +172,7 @@ class StateManager {
     this.currentTaskId = null;
     this.winningTeam = null;
     this.currentBid = 0;
+    this.leadingTeam = "";
   }
 
   /** BIDDING → MAIN_TASK */
@@ -170,6 +181,7 @@ class StateManager {
     this.currentAuctionId = null;
     this.currentTaskId = taskId;
     this.winningTeam = winner;
+    this.leadingTeam = winner.teamName;
     this.currentBid = finalBid;
     if (this.currentQuestion) {
       this.markQuestionUsed(this.currentQuestion.id);
@@ -181,6 +193,7 @@ class StateManager {
     this.phase = "ended";
     this.currentAuctionId = null;
     this.winningTeam = null;
+    this.leadingTeam = "";
     this.currentBid = 0;
   }
 
@@ -197,6 +210,7 @@ class StateManager {
     this.currentQuestion = null;
     this.currentQuestionImage = null;
     this.winningTeam = null;
+    this.leadingTeam = "";
     this.currentBid = 0;
     timerEngineService.resetAll();
   }
@@ -207,6 +221,7 @@ class StateManager {
     this.currentTaskId = null;
     this.currentAuctionId = null;
     this.winningTeam = null;
+    this.leadingTeam = "";
     this.currentBid = 0;
     this.currentQuestion = null;
     this.currentQuestionImage = null;

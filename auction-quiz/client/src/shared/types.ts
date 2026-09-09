@@ -92,11 +92,34 @@ export interface GameState {
   phase: GamePhase;
   currentQuestion: QuestionManifestItem | null;
   currentBid: number;
+  leadingTeam?: string;
   winningTeam: { teamId: string; teamName: string } | null;
   biddingTimer: TimestampTimer | null;
   mainTaskTimer: TimestampTimer | null;
   explicitTimer: TimestampTimer | null;
   sideTaskTimer?: TimestampTimer | null;
+}
+
+export interface FullSyncState {
+  phase: GamePhase;
+  currentBid: number;
+  leadingTeam: string;
+  winningTeam: { teamId: string; teamName: string } | null;
+  timers: {
+    bidding: TimestampTimer | null;
+    main: TimestampTimer | null;
+    side?: TimestampTimer | null;
+    explicit?: TimestampTimer | null;
+    manual?: ManualTimerState;
+  };
+  scoreboard: ScoreboardResponse["teams"];
+  currentQuestion: QuestionManifestItem | null;
+  upcomingQuestion?: QuestionPayload | null;
+  activeQuestion?: QuestionPayload | null;
+  theme?: string;
+  activeAuction?: Auction | null;
+  activeTask?: Task | null;
+  taskTimer?: number;
 }
 
 export interface Task {
@@ -142,6 +165,7 @@ export interface ClientEvents {
   "client:place_bid": (data: { teamId: string; auctionId: string; increment: number }, cb: (res: BidResponse) => void) => void;
   "client:get_scoreboard": (cb: (res: ScoreboardResponse) => void) => void;
   "client:get_game_state": (cb: (res: { success: boolean; gameState?: GameState; error?: string }) => void) => void;
+  "state:request": (cb?: (res: FullSyncState) => void) => void;
   "admin:submit_result": (
     data: { taskId: string; result: TaskResultDecision; rewardPoints?: number },
     cb: (res: ResultResponse) => void
@@ -271,9 +295,12 @@ export interface ServerEvents {
   "timer:side:start": (data: { startTime: number; duration: number; remaining: number }) => void;
   "timer:explicit:start": (data: { startTime: number; duration: number; remaining: number }) => void;
   "auction:started": (auction: Auction) => void;
+  "auction:start"?: (auction: Auction) => void;
   "auction:bid_update": (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
+  "bid:update"?: (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
   "auction:timer": (data: { auctionId: string; remaining: number }) => void;
   "auction:ended": (data: { auctionId?: string; winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
+  "bid:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "auction:cleared": () => void;
   "task:assigned": (task: Task) => void;
   "task:started": (data: { time_limit: number; endAt?: number; taskId?: string; teamName?: string; reward?: number; questionImage?: string }) => void;
@@ -281,6 +308,10 @@ export interface ServerEvents {
   "task:ended": (data: { taskId: string }) => void;
   "task:result": (data: TaskResultEvent) => void;
   "scoreboard:updated": (data: { teams: ScoreboardResponse["teams"] }) => void;
+  "scoreboard:update": (data: { teams: ScoreboardResponse["teams"] }) => void;
+  "team:update": (data: { team: Team }) => void;
+  "question:changed": (data: { question: QuestionManifestItem | null; imagePath?: string | null }) => void;
+  "state:full": (data: FullSyncState) => void;
   "task:paused": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "task:resumed": (data: { taskId: string; timeLeft: number; version: number }) => void;
   "question:active": (data: QuestionPayload) => void;

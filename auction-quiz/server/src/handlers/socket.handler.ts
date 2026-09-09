@@ -10,7 +10,7 @@ import { timerEngineService } from "../services/timer-engine.service";
 import { manualTimerService } from "../services/manual-timer.service";
 import { ADMIN_SECRET, ALLOW_REMOTE_ADMIN, isLocalOrHostIp } from "../auth";
 import { getDb, persistDb } from "../db/database";
-import type { ServerEvents, ClientEvents } from "../types";
+import type { ServerEvents, ClientEvents, FullSyncState } from "../types";
 
 function queryOne(db: any, sql: string, params: any[] = []): any | undefined {
   const stmt = db.prepare(sql);
@@ -39,6 +39,44 @@ export function setupSocketHandlers(io: Server) {
     io.emit("manual_timer:update", s);
   };
 
+  const getFullSyncState = async (): Promise<FullSyncState> => {
+    const gameState = stateManager.getGameState();
+    const timers = timerEngineService.getTimers();
+    const manualTimer = manualTimerService.getState();
+    const scoreboard = await teamService.getScoreboard();
+    const activeAuction = auctionService.getActiveAuction();
+    const taskState = await taskService.getTaskState();
+
+    return {
+      phase: gameState.phase,
+      currentBid: stateManager.getCurrentBid(),
+      leadingTeam: stateManager.getLeadingTeam(),
+      winningTeam: stateManager.getWinningTeam(),
+      timers: {
+        bidding: timers.biddingTimer,
+        main: timers.mainTaskTimer,
+        side: timers.explicitTimer,
+        explicit: timers.explicitTimer,
+        manual: manualTimer,
+      },
+      scoreboard: scoreboard as any,
+      currentQuestion: stateManager.getCurrentQuestion(),
+      activeAuction: activeAuction || null,
+      activeTask: taskState.task || null,
+      taskTimer: taskState.task ? taskState.task.timeLeft : undefined,
+      theme: currentTheme,
+    };
+  };
+
+  const broadcastFullState = async () => {
+    try {
+      const state = await getFullSyncState();
+      io.emit("state:full", state);
+    } catch (err) {
+      console.error("[Socket] Failed to broadcast state:full:", err);
+    }
+  };
+
   io.on("connection", (socket: Socket) => {
     const clientIp = socket.handshake.address;
     const isHost = isLocalOrHostIp(clientIp);
@@ -59,6 +97,22 @@ export function setupSocketHandlers(io: Server) {
     socket.emit("phase:changed", stateManager.getGameState());
     socket.emit("timer:update", timerEngineService.getTimers() as any);
     socket.emit("manual_timer:update", manualTimerService.getState());
+
+    // Send proactive full state to newly connected client
+    getFullSyncState().then((fullState) => {
+      socket.emit("state:full", fullState);
+    }).catch((err) => console.error("[Socket] Failed to send state:full on connect:", err));
+
+    // Handle explicit state requests (e.g. on client reconnect)
+    socket.on("state:request", async (cb) => {
+      try {
+        const fullState = await getFullSyncState();
+        socket.emit("state:full", fullState);
+        cb?.(fullState);
+      } catch (err) {
+        console.error("[Socket] state:request failed:", err);
+      }
+    });
 
     socket.on("client:register", async (data, cb) => {
       try {
@@ -142,7 +196,17 @@ export function setupSocketHandlers(io: Server) {
         const team = await teamService.getTeam(teamId);
         cb({ success: true, bid: result.bid, remainingCoins: team?.bid_coins });
 
+        // Update stateManager current bid and leading team
+        stateManager.setCurrentBid(result.bid.amount);
+        stateManager.setLeadingTeam(team?.teamName || "Unknown");
+
         io.emit("auction:bid_update", {
+          auctionId: data.auctionId,
+          bid: result.bid,
+          teamName: team?.teamName || "Unknown",
+          increment: data.increment,
+        });
+        io.emit("bid:update", {
           auctionId: data.auctionId,
           bid: result.bid,
           teamName: team?.teamName || "Unknown",
@@ -155,6 +219,14 @@ export function setupSocketHandlers(io: Server) {
           bidAmount: result.bid.amount,
           increment: data.increment,
         });
+
+        const scoreboard = await teamService.getScoreboard();
+        io.emit("scoreboard:update", { teams: scoreboard as any });
+        io.emit("scoreboard:updated", { teams: scoreboard as any });
+        if (team) {
+          io.emit("team:update", { team });
+        }
+        await broadcastFullState();
 
         console.log(`[Bid] ${team?.teamName} bid ${result.bid.amount} (+${data.increment}) on auction ${data.auctionId}`);
       } catch (err) {
@@ -417,9 +489,13 @@ export function setupSocketHandlers(io: Server) {
         persistDb();
         const updated = queryOne(db, `SELECT * FROM teams WHERE teamId = ?`, [data.teamId]);
         console.log(`[Admin] Updated team ${row.teamName}: ${updates.join(", ")} → [${params.slice(0, -1).join(", ")}]`);
-        io.emit("scoreboard:updated", {
-          teams: (await teamService.getScoreboard()) as any,
-        });
+        const scoreboard = await teamService.getScoreboard();
+        io.emit("scoreboard:update", { teams: scoreboard as any });
+        io.emit("scoreboard:updated", { teams: scoreboard as any });
+        if (updated) {
+          io.emit("team:update", { team: updated });
+        }
+        await broadcastFullState();
         cb({ success: true, team: updated });
       } catch (err: any) {
         console.error("[Socket] admin:update_team failed:", err);
@@ -550,6 +626,7 @@ export function setupSocketHandlers(io: Server) {
         }
         currentTheme = theme; // Store in server memory
         io.emit("theme:changed", { theme });
+        await broadcastFullState();
         cb({ success: true });
         console.log(`[Theme] Theme changed to: ${theme}`);
       } catch (err: any) {
@@ -598,7 +675,9 @@ export function setupSocketHandlers(io: Server) {
           return;
         }
         io.emit("question:image_set", { imagePath: q.image, question: q });
+        io.emit("question:changed", { question: q, imagePath: q.image });
         io.emit("phase:changed", stateManager.getGameState());
+        await broadcastFullState();
         cb({ success: true, question: q });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Failed to select question" });
@@ -622,8 +701,11 @@ export function setupSocketHandlers(io: Server) {
           coinsDeducted: 0,
         });
         io.emit("sound:task_result", { result: "pass" });
+        io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
+        io.emit("team:update", { team: r.team });
         io.emit("phase:changed", stateManager.getGameState());
+        await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Pass failed" });
@@ -638,6 +720,7 @@ export function setupSocketHandlers(io: Server) {
         io.emit("sound:task_result", { result: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Fail failed" });
@@ -651,6 +734,7 @@ export function setupSocketHandlers(io: Server) {
         await taskService.endFailedTaskNormally();
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "End failed task failed" });
@@ -678,9 +762,12 @@ export function setupSocketHandlers(io: Server) {
           coinsDeducted: 0,
         });
         io.emit("sound:task_result", { result: "pass" });
+        io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
+        io.emit("team:update", { team: r.fallbackTeam });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "Assign fallback failed" });
@@ -797,6 +884,7 @@ export function setupSocketHandlers(io: Server) {
         stateManager.resetRound();
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
+        await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
         cb({ success: false, error: err.message || "End round failed" });
@@ -847,7 +935,10 @@ export function setupSocketHandlers(io: Server) {
       resetManualTimer();
 
       const auction = await auctionService.startAuction({ ...AUCTION_CONFIG, ...opts });
+      stateManager.beginAuction(auction.auctionId);
+
       io.emit("auction:started", auction);
+      io.emit("auction:start", auction);
       io.emit("sound:auction_started");
 
       // Set phase to bidding and broadcast
@@ -887,6 +978,10 @@ export function setupSocketHandlers(io: Server) {
                 winner: { teamId: result.winner.teamId, teamName: result.winner.teamName },
                 winningBid: result.winningBid,
               });
+              io.emit("bid:win", {
+                winner: { teamId: result.winner.teamId, teamName: result.winner.teamName },
+                winningBid: result.winningBid,
+              });
               io.emit("sound:bid_won", {
                 teamName: result.winner.teamName,
                 bidAmount: result.winningBid,
@@ -905,12 +1000,21 @@ export function setupSocketHandlers(io: Server) {
                 duration: mainTimer.duration,
                 remaining: mainTimer.remaining,
               });
+              const scoreboard = await teamService.getScoreboard();
+              io.emit("scoreboard:update", { teams: scoreboard as any });
+              io.emit("scoreboard:updated", { teams: scoreboard as any });
+              const winnerTeam = await teamService.getTeam(result.winner.teamId);
+              if (winnerTeam) {
+                io.emit("team:update", { team: winnerTeam });
+              }
               io.emit("phase:changed", stateManager.getGameState());
+              await broadcastFullState();
               console.log(`[Auction->Task] Auto transitioned: ${task.teamName} won for ${task.finalBid}. Task timer: ${dynamicTime}s`);
             } catch (err) {
               console.error("[Auction] Auto task assignment failed:", err);
               stateManager.setPhase("ended");
               io.emit("phase:changed", stateManager.getGameState());
+              await broadcastFullState();
             }
           } else {
             // EDGE CASE: If 60s timer expires with 0 bids:
@@ -924,6 +1028,7 @@ export function setupSocketHandlers(io: Server) {
               winningBid: null,
             });
             io.emit("phase:changed", stateManager.getGameState());
+            await broadcastFullState();
             console.log(`[Auction] Ended with 0 bids. Phase: ended ("No Winner")`);
           }
         } catch (err) {
@@ -940,8 +1045,11 @@ export function setupSocketHandlers(io: Server) {
       );
 
       io.emit("timer:update", timerEngineService.getTimers() as any);
+      await broadcastFullState();
       return auction;
     },
+    getFullSyncState,
+    broadcastFullState,
   };
 
   return auctionControl;

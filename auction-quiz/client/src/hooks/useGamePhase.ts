@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { getServerBase } from "./useSocket";
 import type {
@@ -11,6 +11,7 @@ import type {
   QuestionPayload,
   Task,
   TaskResultEvent,
+  FullSyncState,
 } from "../shared/types";
 
 type TypedSocket = Socket<ServerEvents, ClientEvents>;
@@ -22,15 +23,28 @@ export function formatClock(totalSeconds: number): string {
 }
 
 /**
+ * Calculate drift-free remaining seconds using server startTime and duration.
+ * remaining = duration - (now - startTime)
+ */
+export function computeRemaining(timer: TimestampTimer | null | undefined): number {
+  if (!timer) return 0;
+  if (!timer.isRunning || !timer.startTime) return Math.max(0, Math.round(timer.remaining ?? 0));
+  const elapsedSec = (Date.now() - timer.startTime) / 1000;
+  return Math.max(0, Math.ceil(timer.duration - elapsedSec));
+}
+
+/**
  * Global game-phase state hook. Owns the connection AND
- * tracks phase / current question / dual timers / active task / latest verdict.
+ * tracks phase / current question / dual timers / active task / latest verdict / scoreboard / leadingTeam.
  */
 export function useGamePhase() {
   const [socket, setSocket] = useState<TypedSocket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "reconnecting" | "disconnected">("disconnected");
   const [phase, setPhase] = useState<GamePhase>("idle");
   const [currentQuestion, setCurrentQuestion] = useState<QuestionManifestItem | null>(null);
   const [currentBid, setCurrentBid] = useState<number>(0);
+  const [leadingTeam, setLeadingTeam] = useState<string | null>(null);
   const [winningTeam, setWinningTeam] = useState<{ teamId: string; teamName: string } | null>(null);
   const [biddingTimer, setBiddingTimer] = useState<TimestampTimer | null>(null);
   const [mainTaskTimer, setMainTaskTimer] = useState<TimestampTimer | null>(null);
@@ -44,9 +58,12 @@ export function useGamePhase() {
   const [lastResult, setLastResult] = useState<TaskResultEvent | null>(null);
   const [upcomingQuestion, setUpcomingQuestion] = useState<QuestionPayload | null>(null);
   const [activeQuestion, setActiveQuestion] = useState<QuestionPayload | null>(null);
+  const [scoreboard, setScoreboard] = useState<any[]>([]);
+  const [activeAuction, setActiveAuction] = useState<any | null>(null);
 
   const seenVersion = useRef(0);
   const hasLiveTaskEvent = useRef(false);
+  const lastEventTime = useRef(Date.now());
   const noteStructural = (version?: number) => {
     hasLiveTaskEvent.current = true;
     if (typeof version === "number") {
@@ -54,6 +71,56 @@ export function useGamePhase() {
     }
   };
 
+  const handleFullState = useCallback((full: FullSyncState) => {
+    lastEventTime.current = Date.now();
+    if (!full) return;
+
+    if (full.phase) setPhase(full.phase);
+    if (full.currentBid !== undefined) setCurrentBid(full.currentBid);
+    if (full.leadingTeam !== undefined) setLeadingTeam(full.leadingTeam);
+    if (full.winningTeam !== undefined) {
+      if (!full.winningTeam) {
+        setWinningTeam(null);
+      } else if (typeof full.winningTeam === "string") {
+        setWinningTeam({ teamId: "", teamName: full.winningTeam });
+      } else {
+        setWinningTeam(full.winningTeam);
+      }
+    }
+    if (full.currentQuestion !== undefined) setCurrentQuestion(full.currentQuestion);
+    if (full.activeAuction !== undefined) setActiveAuction(full.activeAuction);
+    if (full.scoreboard) setScoreboard(full.scoreboard);
+    if (full.timers) {
+      if (full.timers.bidding !== undefined) setBiddingTimer(full.timers.bidding);
+      if (full.timers.main !== undefined) {
+        setMainTaskTimer(full.timers.main);
+        if (full.timers.main) {
+          const rem = computeRemaining(full.timers.main);
+          setTaskTimer(rem);
+          if (rem <= 0 && full.timers.main.duration > 0) setTaskEnded(true);
+        }
+      }
+      if (full.timers.explicit !== undefined) setExplicitTimer(full.timers.explicit);
+      if (full.timers.side !== undefined) setSideTaskTimer(full.timers.side);
+    }
+    if ((full as any).upcomingQuestion !== undefined) setUpcomingQuestion((full as any).upcomingQuestion);
+    if ((full as any).activeQuestion !== undefined) setActiveQuestion((full as any).activeQuestion);
+    if (full.activeTask !== undefined) {
+      setTask(full.activeTask);
+      if (full.activeTask) {
+        const rem = (full.activeTask as any).timeLeft ?? 0;
+        setTaskTimer(rem);
+        setTaskEnded(rem <= 0 && !full.activeTask.paused);
+        setTaskPaused(!!full.activeTask.paused);
+      } else {
+        setTask(null);
+        setTaskEnded(false);
+        setTaskPaused(false);
+      }
+    }
+  }, []);
+
+  // Socket initialization and connection handling
   useEffect(() => {
     const s: TypedSocket = io(getServerBase(), {
       reconnection: true,
@@ -66,81 +133,138 @@ export function useGamePhase() {
     });
     setSocket(s);
 
-    const handleConnect = () => setConnected(true);
-    const handleDisconnect = () => setConnected(false);
+    const handleConnect = () => {
+      setConnected(true);
+      setConnectionStatus("connected");
+      lastEventTime.current = Date.now();
+      // Proactively request full sync state upon connecting / reconnecting
+      s.emit("state:request", (res) => {
+        if (res) handleFullState(res);
+      });
+    };
+
+    const handleDisconnect = () => {
+      setConnected(false);
+      setConnectionStatus("disconnected");
+    };
+
+    const handleConnectError = () => {
+      setConnected(false);
+      setConnectionStatus("reconnecting");
+    };
+
+    const handleReconnectAttempt = () => {
+      setConnectionStatus("reconnecting");
+    };
+
     s.on("connect", handleConnect);
     s.on("disconnect", handleDisconnect);
-    s.on("connect_error", handleDisconnect);
+    s.on("connect_error", handleConnectError);
+    s.io.on("reconnect_attempt", handleReconnectAttempt);
 
     return () => {
       s.off("connect", handleConnect);
       s.off("disconnect", handleDisconnect);
-      s.off("connect_error", handleDisconnect);
+      s.off("connect_error", handleConnectError);
+      s.io.off("reconnect_attempt", handleReconnectAttempt);
       s.disconnect();
       setSocket(null);
     };
-  }, []);
+  }, [handleFullState]);
 
-  // Restore snapshot on connect / refresh
+  // Fallback Polling Safety Net:
+  // Poll /api/state every 10s only if disconnected or no socket event has arrived in >12s
   useEffect(() => {
-    if (!socket || !connected) return;
+    const fallbackInterval = setInterval(() => {
+      const isQuiet = Date.now() - lastEventTime.current > 12000;
+      if (!connected || isQuiet) {
+        fetch(`${getServerBase()}/api/state`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((state) => {
+            if (state) handleFullState(state);
+          })
+          .catch(() => {});
+      }
+    }, 10000);
+
+    return () => clearInterval(fallbackInterval);
+  }, [connected, handleFullState]);
+
+  // Initial snapshot fetch on mount
+  useEffect(() => {
     let cancelled = false;
-    hasLiveTaskEvent.current = false;
-    fetch(`${getServerBase()}/api/auction/current`)
-      .then((r) => r.json())
-      .then((snap: any) => {
-        if (cancelled) return;
-        if (hasLiveTaskEvent.current) return;
-        const v = snap.activeTask?.version ?? 0;
-        if (snap.activeTask && v < seenVersion.current) return;
-        setPhase((snap.phase as GamePhase) || "idle");
-        setUpcomingQuestion(snap.upcomingQuestion || null);
-        setActiveQuestion(snap.activeQuestion || null);
-        if (snap.activeTask) {
-          setTask(snap.activeTask);
-          setTaskTimer(snap.activeTask.timeLeft ?? 0);
-          setTaskEnded((snap.activeTask.timeLeft ?? 0) <= 0 && !snap.activeTask.paused);
-          setTaskPaused(!!snap.activeTask.paused);
-          seenVersion.current = Math.max(seenVersion.current, v);
-        } else {
-          setTask(null);
-          setTaskEnded(false);
-          setTaskPaused(false);
-        }
+    fetch(`${getServerBase()}/api/state`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((snap) => {
+        if (!cancelled && snap) handleFullState(snap);
       })
       .catch(() => {});
+
     return () => {
       cancelled = true;
     };
-  }, [socket, connected]);
+  }, [handleFullState]);
 
-  // Live event listeners
+  // High precision local interval (250ms) to update drift-free timer countdowns
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (biddingTimer?.isRunning && biddingTimer.startTime) {
+        const rem = computeRemaining(biddingTimer);
+        setBiddingTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
+      }
+      if (mainTaskTimer?.isRunning && mainTaskTimer.startTime) {
+        const rem = computeRemaining(mainTaskTimer);
+        setMainTaskTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
+        setTaskTimer((prev) => (prev !== rem ? rem : prev));
+        if (rem <= 0) setTaskEnded(true);
+      }
+      if (explicitTimer?.isRunning && explicitTimer.startTime) {
+        const rem = computeRemaining(explicitTimer);
+        setExplicitTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
+        setSideTaskTimer((prev) => (prev && prev.remaining !== rem ? { ...prev, remaining: rem } : prev));
+      }
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [
+    biddingTimer?.isRunning,
+    biddingTimer?.startTime,
+    biddingTimer?.duration,
+    mainTaskTimer?.isRunning,
+    mainTaskTimer?.startTime,
+    mainTaskTimer?.duration,
+    explicitTimer?.isRunning,
+    explicitTimer?.startTime,
+    explicitTimer?.duration,
+  ]);
+
+  // Live socket event listeners
   useEffect(() => {
     if (!socket || !connected) return;
 
+    const onFullState = (data: FullSyncState) => {
+      handleFullState(data);
+    };
+
     const handlePhaseChanged = (data: GameState) => {
+      lastEventTime.current = Date.now();
       noteStructural();
       setPhase(data.phase);
       if (data.currentQuestion !== undefined) setCurrentQuestion(data.currentQuestion);
       if (data.currentBid !== undefined) setCurrentBid(data.currentBid);
+      if (data.leadingTeam !== undefined) setLeadingTeam(data.leadingTeam);
       if (data.winningTeam !== undefined) setWinningTeam(data.winningTeam);
       if (data.biddingTimer !== undefined) setBiddingTimer(data.biddingTimer);
       if (data.mainTaskTimer !== undefined) {
         setMainTaskTimer(data.mainTaskTimer);
-        if (data.mainTaskTimer) setTaskTimer(data.mainTaskTimer.remaining);
+        if (data.mainTaskTimer) setTaskTimer(computeRemaining(data.mainTaskTimer));
       }
       if (data.explicitTimer !== undefined) setExplicitTimer(data.explicitTimer);
       if (data.sideTaskTimer !== undefined) setSideTaskTimer(data.sideTaskTimer);
     };
 
-    // Also fetch current game state directly on connect
-    socket.emit("client:get_game_state", (res: any) => {
-      if (res?.success && res.gameState) {
-        handlePhaseChanged(res.gameState);
-      }
-    });
-
     const handleTimerMainStart = (data: { startTime: number; duration: number; remaining: number }) => {
+      lastEventTime.current = Date.now();
       setMainTaskTimer({
         startTime: data.startTime,
         duration: data.duration,
@@ -154,6 +278,7 @@ export function useGamePhase() {
     };
 
     const handleTimerExplicitStart = (data: { startTime: number; duration: number; remaining: number }) => {
+      lastEventTime.current = Date.now();
       const t: TimestampTimer = {
         startTime: data.startTime,
         duration: data.duration,
@@ -170,12 +295,14 @@ export function useGamePhase() {
     };
 
     const handleTimerUpdate = (data: any) => {
+      lastEventTime.current = Date.now();
       if (data.biddingTimer !== undefined) setBiddingTimer(data.biddingTimer);
       if (data.mainTaskTimer !== undefined) {
         setMainTaskTimer(data.mainTaskTimer);
         if (data.mainTaskTimer) {
-          setTaskTimer(data.mainTaskTimer.remaining);
-          if (data.mainTaskTimer.remaining <= 0) setTaskEnded(true);
+          const rem = computeRemaining(data.mainTaskTimer);
+          setTaskTimer(rem);
+          if (rem <= 0) setTaskEnded(true);
         }
       }
       if (data.explicitTimer !== undefined) setExplicitTimer(data.explicitTimer);
@@ -187,6 +314,7 @@ export function useGamePhase() {
     };
 
     const handleAuctionStarted = (a: any) => {
+      lastEventTime.current = Date.now();
       noteStructural();
       setPhase("bidding");
       setTask(null);
@@ -194,21 +322,59 @@ export function useGamePhase() {
       setLastResult(null);
       setActiveQuestion(null);
       setWinningTeam(null);
+      setLeadingTeam(null);
       setCurrentBid(a?.startBid || 0);
+      setActiveAuction(a || null);
+    };
+
+    const handleBidUpdate = (data: { auctionId: string; bid: any; teamName: string; increment?: number }) => {
+      lastEventTime.current = Date.now();
+      if (data.bid?.amount !== undefined) setCurrentBid(data.bid.amount);
+      if (data.teamName) setLeadingTeam(data.teamName);
     };
 
     const handleAuctionEnded = (data: { winner: any; winningBid?: number | null }) => {
+      lastEventTime.current = Date.now();
       noteStructural();
       if (data.winner) {
         setWinningTeam({ teamId: data.winner.teamId, teamName: data.winner.teamName });
+        setLeadingTeam(data.winner.teamName);
         if (data.winningBid != null) setCurrentBid(data.winningBid);
       } else {
         setPhase("ended");
         setWinningTeam(null);
+        setLeadingTeam(null);
       }
     };
 
+    const handleScoreboardUpdate = (data: { teams?: any[]; scoreboard?: any[] }) => {
+      lastEventTime.current = Date.now();
+      const teams = data.teams || data.scoreboard;
+      if (teams) setScoreboard(teams);
+    };
+
+    const handleTeamUpdate = (data: { team: any }) => {
+      lastEventTime.current = Date.now();
+      if (data.team) {
+        setScoreboard((prev) => {
+          const idx = prev.findIndex((t) => t.teamId === data.team.teamId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...data.team };
+            return updated;
+          }
+          return prev;
+        });
+      }
+    };
+
+    const handleQuestionChanged = (data: { question?: QuestionManifestItem | null; imagePath?: string | null }) => {
+      lastEventTime.current = Date.now();
+      if (data.question) setCurrentQuestion(data.question);
+    };
+
     const handleAssigned = (t: Task) => {
+      lastEventTime.current = Date.now();
       noteStructural(t.version);
       setTask(t);
       setTaskTimer(Math.max(0, Math.ceil((t.endAt - Date.now()) / 1000)));
@@ -219,6 +385,7 @@ export function useGamePhase() {
     };
 
     const handleTaskStarted = (data: { time_limit: number; endAt?: number; taskId?: string; teamName?: string }) => {
+      lastEventTime.current = Date.now();
       noteStructural();
       setPhase("main_task");
       const initialRemaining = data.endAt ? Math.max(0, Math.ceil((data.endAt - Date.now()) / 1000)) : data.time_limit;
@@ -250,6 +417,7 @@ export function useGamePhase() {
     };
 
     const handleTaskTimer = (data: { taskId: string; timeLeft: number; version: number }) => {
+      lastEventTime.current = Date.now();
       if (typeof data.version === "number") {
         seenVersion.current = Math.max(seenVersion.current, data.version);
       }
@@ -258,11 +426,13 @@ export function useGamePhase() {
     };
 
     const handleTaskEnded = () => {
+      lastEventTime.current = Date.now();
       noteStructural();
       setTaskEnded(true);
     };
 
     const handlePaused = (data: { taskId: string; timeLeft: number; version: number }) => {
+      lastEventTime.current = Date.now();
       noteStructural(data.version);
       setTaskPaused(true);
       setTaskTimer(data.timeLeft);
@@ -270,6 +440,7 @@ export function useGamePhase() {
     };
 
     const handleResumed = (data: { taskId: string; timeLeft: number; version: number }) => {
+      lastEventTime.current = Date.now();
       noteStructural(data.version);
       setTaskPaused(false);
       setTaskEnded(false);
@@ -278,6 +449,7 @@ export function useGamePhase() {
     };
 
     const handleTaskResult = (r: TaskResultEvent) => {
+      lastEventTime.current = Date.now();
       noteStructural();
       setLastResult(r);
       setTask(null);
@@ -288,18 +460,29 @@ export function useGamePhase() {
     };
 
     const handleQuestionImageSet = (data: { imagePath: string; question?: QuestionManifestItem }) => {
+      lastEventTime.current = Date.now();
       if (data.question) {
         setCurrentQuestion(data.question);
       }
     };
 
+    socket.on("state:full", onFullState);
     socket.on("phase:changed", handlePhaseChanged);
     socket.on("timer:main:start", handleTimerMainStart);
     socket.on("timer:side:start", handleTimerSideStart);
     socket.on("timer:explicit:start", handleTimerExplicitStart);
     socket.on("timer:update", handleTimerUpdate);
     socket.on("auction:started", handleAuctionStarted);
+    socket.on("auction:start" as any, handleAuctionStarted);
+    socket.on("auction:bid_update", handleBidUpdate);
+    socket.on("bid:update" as any, handleBidUpdate);
     socket.on("auction:ended", handleAuctionEnded);
+    socket.on("bid:win" as any, handleAuctionEnded);
+    socket.on("scoreboard:updated", handleScoreboardUpdate);
+    socket.on("scoreboard:update" as any, handleScoreboardUpdate);
+    socket.on("team:update" as any, handleTeamUpdate);
+    socket.on("question:changed" as any, handleQuestionChanged);
+    socket.on("question:image_set", handleQuestionImageSet);
     socket.on("task:assigned", handleAssigned);
     socket.on("task:started", handleTaskStarted);
     socket.on("task:timer", handleTaskTimer);
@@ -307,16 +490,25 @@ export function useGamePhase() {
     socket.on("task:paused", handlePaused);
     socket.on("task:resumed", handleResumed);
     socket.on("task:result", handleTaskResult);
-    socket.on("question:image_set", handleQuestionImageSet);
 
     return () => {
+      socket.off("state:full", onFullState);
       socket.off("phase:changed", handlePhaseChanged);
       socket.off("timer:main:start", handleTimerMainStart);
       socket.off("timer:side:start", handleTimerSideStart);
       socket.off("timer:explicit:start", handleTimerExplicitStart);
       socket.off("timer:update", handleTimerUpdate);
       socket.off("auction:started", handleAuctionStarted);
+      socket.off("auction:start" as any, handleAuctionStarted);
+      socket.off("auction:bid_update", handleBidUpdate);
+      socket.off("bid:update" as any, handleBidUpdate);
       socket.off("auction:ended", handleAuctionEnded);
+      socket.off("bid:win" as any, handleAuctionEnded);
+      socket.off("scoreboard:updated", handleScoreboardUpdate);
+      socket.off("scoreboard:update" as any, handleScoreboardUpdate);
+      socket.off("team:update" as any, handleTeamUpdate);
+      socket.off("question:changed" as any, handleQuestionChanged);
+      socket.off("question:image_set", handleQuestionImageSet);
       socket.off("task:assigned", handleAssigned);
       socket.off("task:started", handleTaskStarted);
       socket.off("task:timer", handleTaskTimer);
@@ -324,16 +516,17 @@ export function useGamePhase() {
       socket.off("task:paused", handlePaused);
       socket.off("task:resumed", handleResumed);
       socket.off("task:result", handleTaskResult);
-      socket.off("question:image_set", handleQuestionImageSet);
     };
-  }, [socket, connected]);
+  }, [socket, connected, handleFullState]);
 
   return {
     socket,
     connected,
+    connectionStatus,
     phase,
     currentQuestion,
     currentBid,
+    leadingTeam,
     winningTeam,
     biddingTimer,
     mainTaskTimer,
@@ -346,5 +539,7 @@ export function useGamePhase() {
     lastResult,
     upcomingQuestion,
     activeQuestion,
+    scoreboard,
+    activeAuction,
   };
 }
