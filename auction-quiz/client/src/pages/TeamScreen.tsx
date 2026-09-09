@@ -238,6 +238,20 @@ function FeedbackToast({ message }: { message: { type: "success" | "error"; text
   );
 }
 
+function getDeviceId(): string {
+  if (typeof window === "undefined") return "";
+  let deviceId = localStorage.getItem("auction_device_id");
+  if (!deviceId) {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      deviceId = crypto.randomUUID();
+    } else {
+      deviceId = "dev_" + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+    }
+    localStorage.setItem("auction_device_id", deviceId);
+  }
+  return deviceId;
+}
+
 /* ─── Main Team Screen Component ─── */
 export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   const {
@@ -315,24 +329,26 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
     setTimeout(() => setter(false), 1500);
   };
 
-  // Auto-reconnect session
+  // Auto-restore session (Device-Level Lock + sessionToken)
   useEffect(() => {
     if (!connected || !socket) return;
+    const deviceId = getDeviceId();
     const token = sessionToken || localStorage.getItem("sessionToken");
-    if (token) {
-      socket.emit("client:reconnect", { sessionToken: token }, (res: any) => {
-        if (res.success && res.team) {
-          setTeam(res.team);
-          setCoins(res.team.bid_coins);
-          setPoints(res.team.reward_points);
-          if (res.currentAuction) {
-            setAuction(res.currentAuction);
-            setCurrentBid(res.currentBid || res.currentAuction.startBid);
-            setTimer(res.timer || 0);
-          }
+
+    socket.emit("client:restore_session", { deviceId, sessionToken: token || undefined }, (res: any) => {
+      if (res && res.success && res.team) {
+        setTeam(res.team);
+        setCoins(res.team.bid_coins);
+        setPoints(res.team.reward_points);
+        if (res.sessionToken) localStorage.setItem("sessionToken", res.sessionToken);
+        localStorage.setItem("teamId", res.team.teamId);
+        if (res.currentAuction) {
+          setAuction(res.currentAuction);
+          setCurrentBid(res.currentBid || res.currentAuction.startBid);
+          setTimer(res.timer || 0);
         }
-      });
-    }
+      }
+    });
   }, [socket, connected, sessionToken]);
 
   // Bid placement handler
@@ -524,21 +540,18 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   }, [phase, team, coins, currentBid, leadingTeam, cooldown, handleBid]);
 
   /* ─── Registration Form State & Handlers ─── */
-  type FormField = "teamName" | "player1" | "player2" | "phone" | "email";
-  const [form, setForm] = useState({ teamName: "", player1: "", player2: "", phone: "", email: "" });
+  type FormField = "player1" | "player2" | "phone" | "email";
+  const [form, setForm] = useState({ player1: "", player2: "", phone: "", email: "" });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [formTouched, setFormTouched] = useState<Record<string, boolean>>({});
 
   const validateField = (name: string, value: string): string => {
     const trimmed = value.trim();
     switch (name) {
-      case "teamName":
-        if (trimmed.length < 3 || trimmed.length > 30) return "Team name must be 3-30 characters";
-        if (!/^[a-zA-Z0-9 ]+$/.test(trimmed)) return "Team name must be alphanumeric";
-        return "";
       case "player1":
       case "player2":
         if (trimmed.length === 0) return "Player name is required";
+        if (trimmed.length < 2) return "Player name must be at least 2 characters";
         if (!/^[a-zA-Z ]+$/.test(trimmed)) return "Player name must contain only letters";
         return "";
       case "email":
@@ -547,7 +560,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
         return "";
       case "phone":
         if (trimmed.length === 0) return "Phone number is required";
-        if (!/^[6-9]\d{9}$/.test(trimmed)) return "Enter a valid 10-digit Indian number (starting with 6-9)";
+        if (!/^\d{10}$/.test(trimmed)) return "Enter a valid 10-digit phone number";
         return "";
       default:
         return "";
@@ -595,12 +608,13 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
       return;
     }
 
+    const deviceId = getDeviceId();
     const trimmedForm = {
-      teamName: form.teamName.trim(),
       player1: form.player1.trim(),
       player2: form.player2.trim(),
       email: form.email.trim().toLowerCase(),
       phone: form.phone.trim(),
+      deviceId,
     };
 
     socket.emit("client:register", trimmedForm, (res: any) => {
@@ -655,17 +669,31 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
 
           <div style={regRight}>
             <div style={regFormCard}>
-              <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "1.5rem", color: C.primary, textAlign: "center", marginBottom: "24px" }}>
+              <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "1.5rem", color: C.primary, textAlign: "center", marginBottom: "16px" }}>
                 Team Registration
+              </div>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                padding: "10px 14px",
+                borderRadius: tokens.radius.md,
+                backgroundColor: `${C.accent}18`,
+                border: `1px solid ${C.accent}50`,
+                marginBottom: "20px",
+              }}>
+                <span style={{ fontSize: "1.1rem" }}>⚡</span>
+                <span style={{ fontFamily: F.body, fontSize: "0.85rem", color: C.text, fontWeight: 600, lineHeight: 1.4 }}>
+                  Your team name will be assigned automatically from the pool.
+                </span>
               </div>
               <form onSubmit={handleRegister} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                 {([
-                  { key: "teamName", label: "Team Name", placeholder: "Enter team name" },
                   { key: "player1", label: "Player 1", placeholder: "First player name" },
                   { key: "player2", label: "Player 2", placeholder: "Second player name" },
                   { key: "email", label: "Email", placeholder: "team@example.com", type: "email" },
                   { key: "phone", label: "Contact Number", placeholder: "10-digit phone number" },
-                ] as Array<{ key: "teamName" | "player1" | "player2" | "email" | "phone"; label: string; placeholder: string; type?: string }>).map((field) => (
+                ] as Array<{ key: "player1" | "player2" | "email" | "phone"; label: string; placeholder: string; type?: string }>).map((field) => (
                   <div key={field.key}>
                     <label style={{ fontFamily: F.body, fontWeight: 600, fontSize: "0.75rem", color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "6px", display: "block" }}>
                       {field.label}

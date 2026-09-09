@@ -4,11 +4,12 @@
 
 // ---- Team ----
 export interface TeamRegistration {
-  teamName: string;
   player1: string;
   player2: string;
   phone: string;
   email: string;
+  deviceId: string;
+  teamName?: string;
 }
 
 export interface Team {
@@ -18,6 +19,7 @@ export interface Team {
   player2: string;
   phone: string;
   email: string;
+  deviceId?: string;
   bid_coins: number;
   reward_points: number;
   created_at: string;
@@ -175,7 +177,10 @@ export interface TaskResultEvent {
 // ---- Socket Events: Client -> Server ----
 export interface ClientEvents {
   "client:register": (data: TeamRegistration, cb: (res: RegisterResponse) => void) => void;
+  "client:restore_session": (data: { deviceId: string; sessionToken?: string }, cb: (res: ReconnectResponse | { success: false; registered: boolean; error?: string }) => void) => void;
   "client:reconnect": (data: { sessionToken: string }, cb: (res: ReconnectResponse) => void) => void;
+  "admin:reset_team_pool": (data: Record<string, never>, cb: (res: { success: boolean; stats?: any; error?: string }) => void) => void;
+  "admin:get_team_pool": (cb: (res: { success: boolean; stats?: any; error?: string }) => void) => void;
   "client:place_bid": (data: { teamId: string; auctionId: string; increment: number }, cb: (res: BidResponse) => void) => void;
   "client:get_scoreboard": (cb: (res: ScoreboardResponse) => void) => void;
   "client:get_game_state": (cb: (res: { success: boolean; gameState?: GameState; error?: string }) => void) => void;

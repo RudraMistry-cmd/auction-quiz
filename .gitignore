@@ -7,7 +7,8 @@ dist/
 # Local SQLite data (live event state — never commit)
 *.db
 *.db-journal
-data/
+data/*.db
+data/*.db-journal
 
 # Env / secrets
 .env

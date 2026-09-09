@@ -1,0 +1,21 @@
+id,name
+1,#include
+2,#define
+3,stdio.h
+4,math.h
+5,main()
+6,printf()
+7,scanf()
+8,malloc()
+9,free()
+10,return 0;
+11,typedef
+12,struct
+13,sizeof()
+14,pointer*
+15,while(1)
+16,break;
+17,const
+18,switch()
+19,case:
+20,void*

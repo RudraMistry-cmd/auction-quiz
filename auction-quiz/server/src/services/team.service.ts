@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import { getDb, persistDb } from "../db/database";
+import { teamPoolService } from "./team-pool.service";
 import type { Team, TeamSession, TeamRegistration } from "../types";
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -32,28 +33,24 @@ export interface ValidationError {
 export function validateRegistration(data: TeamRegistration): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  // Team name: 3-30 chars, alphanumeric + spaces
-  const teamName = data.teamName?.trim() || "";
-  if (teamName.length < 3 || teamName.length > 30) {
-    errors.push({ field: "teamName", message: "Team name must be 3-30 characters" });
-  } else if (!/^[a-zA-Z0-9 ]+$/.test(teamName)) {
-    errors.push({ field: "teamName", message: "Team name must be alphanumeric (letters, numbers, spaces only)" });
-  }
-
-  // Player 1: alphabets only, non-empty
+  // Player 1: non-empty, min length 2, letters and spaces only
   const player1 = data.player1?.trim() || "";
   if (player1.length === 0) {
     errors.push({ field: "player1", message: "Player 1 name is required" });
+  } else if (player1.length < 2) {
+    errors.push({ field: "player1", message: "Player 1 name must be at least 2 characters" });
   } else if (!/^[a-zA-Z ]+$/.test(player1)) {
-    errors.push({ field: "player1", message: "Player name must contain only letters" });
+    errors.push({ field: "player1", message: "Player name must contain only letters and spaces" });
   }
 
-  // Player 2: alphabets only, non-empty
+  // Player 2: non-empty, min length 2, letters and spaces only
   const player2 = data.player2?.trim() || "";
   if (player2.length === 0) {
     errors.push({ field: "player2", message: "Player 2 name is required" });
+  } else if (player2.length < 2) {
+    errors.push({ field: "player2", message: "Player 2 name must be at least 2 characters" });
   } else if (!/^[a-zA-Z ]+$/.test(player2)) {
-    errors.push({ field: "player2", message: "Player name must contain only letters" });
+    errors.push({ field: "player2", message: "Player name must contain only letters and spaces" });
   }
 
   // Email: valid format
@@ -65,13 +62,19 @@ export function validateRegistration(data: TeamRegistration): ValidationError[] 
     errors.push({ field: "email", message: "Please enter a valid email address" });
   }
 
-  // Phone: 10-digit Indian number starting 6-9
+  // Phone: 10-digit numeric
   const phone = data.phone?.trim() || "";
-  const phoneRegex = /^[6-9]\d{9}$/;
+  const phoneRegex = /^\d{10}$/;
   if (phone.length === 0) {
     errors.push({ field: "phone", message: "Phone number is required" });
   } else if (!phoneRegex.test(phone)) {
-    errors.push({ field: "phone", message: "Enter a valid 10-digit Indian number (starting with 6-9)" });
+    errors.push({ field: "phone", message: "Enter a valid 10-digit phone number" });
+  }
+
+  // DeviceId: required for session lock
+  const deviceId = data.deviceId?.trim() || "";
+  if (deviceId.length === 0) {
+    errors.push({ field: "deviceId", message: "Device identifier is required" });
   }
 
   return errors;
@@ -79,11 +82,11 @@ export function validateRegistration(data: TeamRegistration): ValidationError[] 
 
 export function sanitizeInput(data: TeamRegistration): TeamRegistration {
   return {
-    teamName: (data.teamName || "").trim(),
     player1: (data.player1 || "").trim(),
     player2: (data.player2 || "").trim(),
     email: (data.email || "").trim().toLowerCase(),
     phone: (data.phone || "").trim(),
+    deviceId: (data.deviceId || "").trim(),
   };
 }
 
@@ -94,16 +97,30 @@ export class TeamService {
     // Sanitize input
     const sanitized = sanitizeInput(data);
 
-    // Validate
+    // 1. Device-Level Session Lock:
+    // If deviceId already has an assigned team in device_sessions, return it immediately (idempotent, no duplicate creation)
+    if (sanitized.deviceId) {
+      const existingDevice = queryOne(db, "SELECT teamId FROM device_sessions WHERE deviceId = ?", [sanitized.deviceId]);
+      if (existingDevice) {
+        const existingTeam = await this.getTeam(existingDevice.teamId);
+        if (existingTeam) {
+          let session = queryOne(db, "SELECT sessionToken FROM sessions WHERE teamId = ? ORDER BY createdAt DESC LIMIT 1", [existingTeam.teamId]);
+          let sessionToken = session?.sessionToken;
+          if (!sessionToken) {
+            sessionToken = crypto.randomBytes(48).toString("hex");
+            run(db, "INSERT INTO sessions (teamId, sessionToken) VALUES (?, ?)", [existingTeam.teamId, sessionToken]);
+            persistDb();
+          }
+          console.log(`[Team] Device ${sanitized.deviceId} already mapped to ${existingTeam.teamName}. Returning existing team.`);
+          return { team: existingTeam, sessionToken };
+        }
+      }
+    }
+
+    // Validate input
     const validationErrors = validateRegistration(sanitized);
     if (validationErrors.length > 0) {
       return { error: validationErrors[0].message, errors: validationErrors };
-    }
-
-    // Check duplicate team name
-    const existing = queryOne(db, "SELECT teamId FROM teams WHERE teamName = ?", [sanitized.teamName]);
-    if (existing) {
-      return { error: "Team name already exists" };
     }
 
     // Check duplicate email
@@ -118,21 +135,53 @@ export class TeamService {
       return { error: "This phone number is already registered" };
     }
 
+    // Claim next available team name from pool
+    let poolEntry: { id: number; name: string };
+    try {
+      poolEntry = await teamPoolService.claimNextTeamName();
+    } catch (err: any) {
+      return { error: err.message || "All teams are full" };
+    }
+
     const teamId = uuidv4();
     const sessionToken = crypto.randomBytes(48).toString("hex");
 
     run(db, `
-      INSERT INTO teams (teamId, teamName, player1, player2, phone, email)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [teamId, sanitized.teamName, sanitized.player1, sanitized.player2, sanitized.phone, sanitized.email]);
+      INSERT INTO teams (teamId, teamName, player1, player2, phone, email, deviceId, bid_coins, reward_points)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1000, 0)
+    `, [teamId, poolEntry.name, sanitized.player1, sanitized.player2, sanitized.phone, sanitized.email, sanitized.deviceId]);
+
+    run(db, `
+      INSERT OR REPLACE INTO device_sessions (deviceId, teamId)
+      VALUES (?, ?)
+    `, [sanitized.deviceId, teamId]);
 
     run(db, `
       INSERT INTO sessions (teamId, sessionToken)
       VALUES (?, ?)
     `, [teamId, sessionToken]);
+
     persistDb();
 
     const team = (await this.getTeam(teamId))!;
+    return { team, sessionToken };
+  }
+
+  async getTeamByDevice(deviceId: string): Promise<{ team: Team; sessionToken: string } | null> {
+    const db = await getDb();
+    if (!deviceId) return null;
+    const mapping = queryOne(db, "SELECT teamId FROM device_sessions WHERE deviceId = ?", [deviceId]);
+    if (!mapping) return null;
+    const team = await this.getTeam(mapping.teamId);
+    if (!team) return null;
+
+    let session = queryOne(db, "SELECT sessionToken FROM sessions WHERE teamId = ? ORDER BY createdAt DESC LIMIT 1", [team.teamId]);
+    let sessionToken = session?.sessionToken;
+    if (!sessionToken) {
+      sessionToken = crypto.randomBytes(48).toString("hex");
+      run(db, "INSERT INTO sessions (teamId, sessionToken) VALUES (?, ?)", [team.teamId, sessionToken]);
+      persistDb();
+    }
     return { team, sessionToken };
   }
 
@@ -285,6 +334,9 @@ export class TeamService {
       return { success: false, error: "Team not found" };
     }
 
+    // Release team name back to pool
+    await teamPoolService.releaseTeamName(existing.teamName);
+
     // Clean up dependent records safely
     run(db, "UPDATE auctions SET winnerId = NULL WHERE winnerId = ?", [teamId]);
     run(db, "DELETE FROM bids WHERE teamId = ?", [teamId]);
@@ -295,6 +347,7 @@ export class TeamService {
     }
     run(db, "DELETE FROM tasks WHERE teamId = ?", [teamId]);
     run(db, "DELETE FROM sessions WHERE teamId = ?", [teamId]);
+    run(db, "DELETE FROM device_sessions WHERE teamId = ?", [teamId]);
     run(db, "DELETE FROM teams WHERE teamId = ?", [teamId]);
     persistDb();
 

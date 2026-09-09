@@ -148,8 +148,20 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [dataConfirm, setDataConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
   const [dataToast, setDataToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [poolStats, setPoolStats] = useState<{ total: number; assigned: number; remaining: number } | null>(null);
+  const [resetPoolConfirm, setResetPoolConfirm] = useState(false);
 
   const [taskPending, setTaskPending] = useState(false);
+
+  // Fetch team pool stats
+  const fetchPoolStats = () => {
+    if (!socket || !connected) return;
+    socket.emit("admin:get_team_pool" as any, (res: any) => {
+      if (res && res.success && res.stats) {
+        setPoolStats(res.stats);
+      }
+    });
+  };
 
   // Fetch scoreboard
   const fetchScoreboard = () => {
@@ -215,6 +227,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         setAuthError(null);
         fetchScoreboard();
         fetchSounds();
+        fetchPoolStats();
       } else {
         setIsAdminVerified(false);
         setAuthError(res.error || "Admin verification failed");
@@ -305,6 +318,10 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     socket.on("scoreboard:update" as any, handleScores);
     socket.on("team:update" as any, handleScores);
     socket.on("manual_timer:update", handleTimerUpdate);
+    const handlePoolUpdate = (stats: any) => {
+      setPoolStats(stats);
+    };
+    socket.on("team_pool:update" as any, handlePoolUpdate);
 
     const handleThemeChanged = (data: { theme: string }) => {
       document.documentElement.setAttribute("data-theme", data.theme);
@@ -1071,35 +1088,64 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           {/* Collapsible Content */}
           {dataPanelOpen && (
             <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px", borderTop: `1px solid ${C.border}`, paddingTop: "16px" }}>
-              {/* Refresh Button */}
-              <button
-                onClick={() => {
-                  fetch(`${getServerBase()}/admin/teams`, {
-                    headers: { "x-admin-secret": secret },
-                  })
-                    .then((r) => r.json())
-                    .then((data) => {
-                      if (data.success) {
-                        setAllTeams(data.teams);
-                        setDataToast({ type: "success", text: "Teams refreshed" });
-                        setTimeout(() => setDataToast(null), 2000);
-                      }
-                    })
-                    .catch((err) => {
-                      console.error("[Data] Failed to refresh teams:", err);
-                      setDataToast({ type: "error", text: "Failed to refresh" });
-                      setTimeout(() => setDataToast(null), 3000);
-                    });
-                }}
-                style={{
-                  padding: "8px 16px", borderRadius: "6px",
-                  border: `1px solid ${C.border}`, backgroundColor: C.surface,
-                  cursor: "pointer", fontFamily: F.body, fontWeight: 600,
-                  fontSize: "0.8rem", color: C.text, alignSelf: "flex-start",
-                }}
-              >
-                ↻ Refresh Data
-              </button>
+              {/* Controls Header Row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => {
+                      fetch(`${getServerBase()}/admin/teams`, {
+                        headers: { "x-admin-secret": secret },
+                      })
+                        .then((r) => r.json())
+                        .then((data) => {
+                          if (data.success) {
+                            setAllTeams(data.teams);
+                            fetchPoolStats();
+                            setDataToast({ type: "success", text: "Teams & pool refreshed" });
+                            setTimeout(() => setDataToast(null), 2000);
+                          }
+                        })
+                        .catch((err) => {
+                          console.error("[Data] Failed to refresh teams:", err);
+                          setDataToast({ type: "error", text: "Failed to refresh" });
+                          setTimeout(() => setDataToast(null), 3000);
+                        });
+                    }}
+                    style={{
+                      padding: "8px 16px", borderRadius: "6px",
+                      border: `1px solid ${C.border}`, backgroundColor: C.surface,
+                      cursor: "pointer", fontFamily: F.body, fontWeight: 600,
+                      fontSize: "0.8rem", color: C.text,
+                    }}
+                  >
+                    ↻ Refresh Data
+                  </button>
+
+                  {poolStats && (
+                    <div style={{
+                      padding: "6px 14px", borderRadius: "6px",
+                      backgroundColor: `${C.accent}15`, border: `1px solid ${C.accent}40`,
+                      fontFamily: F.mono, fontSize: "0.8rem", color: C.accent, fontWeight: 700,
+                    }}>
+                      Pool Capacity: {poolStats.assigned} assigned / {poolStats.total} total ({poolStats.remaining} available)
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setResetPoolConfirm(true)}
+                  disabled={dataBusy}
+                  style={{
+                    padding: "8px 14px", borderRadius: "6px",
+                    border: `1px solid ${C.border}`, backgroundColor: `${C.danger}15`,
+                    cursor: dataBusy ? "not-allowed" : "pointer", fontFamily: F.body, fontWeight: 600,
+                    fontSize: "0.8rem", color: C.danger,
+                  }}
+                  title="Reset team pool assignments"
+                >
+                  ↺ Reset Team Pool
+                </button>
+              </div>
 
               {/* Teams Table */}
               {allTeams.length === 0 ? (
@@ -1869,6 +1915,51 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
               </button>
               <button
                 onClick={() => setDeleteConfirm(null)}
+                disabled={dataBusy}
+                style={styles.modalCancelBtn}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Team Pool confirmation modal */}
+      {resetPoolConfirm && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={{ ...styles.modalTitle, color: C.accent }}>Reset Team Pool</h3>
+            <p style={styles.modalText}>
+              Are you sure you want to reset pool assignments?
+            </p>
+            <p style={{ color: C.muted, fontSize: "0.85rem", lineHeight: "1.4" }}>
+              This will mark all pool team names that are not actively registered in the database as available for new teams.
+            </p>
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => {
+                  setDataBusy(true);
+                  socket?.emit("admin:reset_team_pool" as any, {}, (res: any) => {
+                    setDataBusy(false);
+                    setResetPoolConfirm(false);
+                    if (res && res.success) {
+                      setPoolStats(res.stats);
+                      setDataToast({ type: "success", text: "Team pool reset successfully!" });
+                      setTimeout(() => setDataToast(null), 3000);
+                    } else {
+                      setDataToast({ type: "error", text: res?.error || "Reset failed" });
+                      setTimeout(() => setDataToast(null), 3000);
+                    }
+                  });
+                }}
+                disabled={dataBusy}
+                style={{ ...styles.modalConfirmBtn, backgroundColor: C.accent, color: C.bg }}
+              >
+                {dataBusy ? "Resetting…" : "Confirm Reset"}
+              </button>
+              <button
+                onClick={() => setResetPoolConfirm(false)}
                 disabled={dataBusy}
                 style={styles.modalCancelBtn}
               >

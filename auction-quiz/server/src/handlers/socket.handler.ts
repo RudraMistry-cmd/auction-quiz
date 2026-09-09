@@ -2,6 +2,7 @@ import { Server, Socket } from "socket.io";
 import fs from "fs";
 import path from "path";
 import { teamService } from "../services/team.service";
+import { teamPoolService } from "../services/team-pool.service";
 import { auctionService } from "../services/auction.service";
 import { taskService } from "../services/task.service";
 import { questionService } from "../services/question.service";
@@ -198,6 +199,86 @@ export function setupSocketHandlers(io: Server) {
       } catch (err) {
         console.error("[Socket] client:reconnect failed:", err);
         cb({ success: false, error: "Reconnect failed. Please try again." });
+      }
+    });
+
+    socket.on("client:restore_session", async (data, cb) => {
+      try {
+        let team: any = null;
+        let sessionToken: string | undefined = data?.sessionToken;
+
+        // 1. Primary Device Lock: Find team mapped to deviceId
+        if (data?.deviceId) {
+          const deviceResult = await teamService.getTeamByDevice(data.deviceId);
+          if (deviceResult) {
+            team = deviceResult.team;
+            sessionToken = deviceResult.sessionToken;
+          }
+        }
+
+        // 2. Fallback: Find team by sessionToken
+        if (!team && sessionToken) {
+          team = await teamService.validateSession(sessionToken);
+        }
+
+        if (!team) {
+          cb({ success: false, registered: false, error: "No active session for this device" });
+          return;
+        }
+
+        socketTeamMap.set(socket.id, team.teamId);
+        socket.data.teamId = team.teamId;
+
+        const activeAuction = auctionService.getActiveAuction();
+        let timer: number | undefined;
+        let currentBid: number | undefined;
+
+        if (activeAuction) {
+          timer = Math.max(0, Math.ceil((activeAuction.endAt - Date.now()) / 1000));
+          currentBid = await auctionService.getCurrentBid(activeAuction.auctionId);
+        }
+
+        const taskState = await taskService.getTaskState();
+        const gameState = stateManager.getGameState();
+
+        cb({
+          success: true,
+          registered: true,
+          team,
+          sessionToken,
+          currentAuction: activeAuction || undefined,
+          currentBid,
+          timer,
+          phase: gameState.phase,
+          gameState,
+          activeTask: taskState.task || undefined,
+          taskTimer: taskState.task ? taskState.task.timeLeft : undefined,
+        });
+
+        console.log(`[Team] Session restored for: ${team.teamName} (Device: ${data?.deviceId || "token"})`);
+      } catch (err) {
+        console.error("[Socket] client:restore_session failed:", err);
+        cb({ success: false, registered: false, error: "Failed to restore session." });
+      }
+    });
+
+    socket.on("admin:reset_team_pool", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const stats = await teamPoolService.resetPool();
+        io.emit("team_pool:update", stats as any);
+        cb({ success: true, stats });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to reset pool" });
+      }
+    });
+
+    socket.on("admin:get_team_pool", async (cb) => {
+      try {
+        const stats = await teamPoolService.getPoolStats();
+        cb({ success: true, stats });
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed to get pool stats" });
       }
     });
 

@@ -11,6 +11,7 @@ import { taskService } from "./services/task.service";
 import { questionService } from "./services/question.service";
 import { manualTimerService } from "./services/manual-timer.service";
 import { teamService } from "./services/team.service";
+import { teamPoolService } from "./services/team-pool.service";
 import { ADMIN_SECRET, ALLOW_REMOTE_ADMIN, isLocalOrHostIp } from "./auth";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -23,6 +24,7 @@ process.on("unhandledRejection", (reason) => {
 async function main() {
   // Initialize database
   await getDb();
+  await teamPoolService.init();
   await auctionService.init();
   // Close any auction/task left active by a restart before the event continues.
   await auctionService.reconcileOnBoot();
@@ -233,6 +235,27 @@ async function main() {
 
   app.delete("/admin/team/:id", adminHttpAuth, deleteTeamHandler);
   app.delete("/admin/teams/:id", adminHttpAuth, deleteTeamHandler);
+
+  // GET /admin/team-pool - Fetch pool statistics
+  app.get("/admin/team-pool", adminHttpAuth, async (_req, res) => {
+    try {
+      const stats = await teamPoolService.getPoolStats();
+      res.json({ success: true, stats });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /admin/team-pool/reset - Reset pool assignments for unallocated teams
+  app.post("/admin/team-pool/reset", adminHttpAuth, async (_req, res) => {
+    try {
+      const stats = await teamPoolService.resetPool();
+      io.emit("team_pool:update", stats as any);
+      res.json({ success: true, stats });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`\n========================================`);

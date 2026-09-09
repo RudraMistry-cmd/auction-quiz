@@ -49,6 +49,7 @@ export async function getDb(): Promise<SqlJsDatabase> {
   ensureColumn(db, "tasks", "time_limit", "INTEGER NOT NULL DEFAULT 300");
   ensureColumn(db, "teams", "phone", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "teams", "email", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "teams", "deviceId", "TEXT NOT NULL DEFAULT ''");
 
   // Auto-save every 5 seconds (safety net — mutations persist immediately)
   saveInterval = setInterval(persistDb, 5000);
@@ -140,8 +141,24 @@ function initTables(db: SqlJsDatabase) {
       FOREIGN KEY (taskId) REFERENCES tasks(taskId) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS team_pool (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      is_assigned INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS device_sessions (
+      deviceId TEXT PRIMARY KEY,
+      teamId TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_active TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (teamId) REFERENCES teams(teamId) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(sessionToken);
     CREATE INDEX IF NOT EXISTS idx_sessions_team ON sessions(teamId);
+    CREATE INDEX IF NOT EXISTS idx_device_team ON device_sessions(teamId);
+    CREATE INDEX IF NOT EXISTS idx_pool_assigned ON team_pool(is_assigned);
     CREATE INDEX IF NOT EXISTS idx_bids_auction ON bids(auctionId);
     CREATE INDEX IF NOT EXISTS idx_bids_team ON bids(teamId);
     CREATE INDEX IF NOT EXISTS idx_bids_seq ON bids(auctionId, seqNo);
