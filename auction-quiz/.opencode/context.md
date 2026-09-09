@@ -12,82 +12,40 @@
 - `server/` - Express + Socket.IO backend
 - `client/` - React + Vite frontend
 - `client/public/assets/logo.png` - Bid for C logo
-- `client/public/sounds/` - 6 MP3 sound files
+- `client/public/sounds/` - 6 MP3 sound files (wav also supported now)
 
-## Completed Features
-
-### Core System
-- ✅ Multi-increment bidding (+20 navy, +50 gold)
-- ✅ Question image persistence
-- ✅ Timer visibility (top center, clamp sizing, color transitions)
-- ✅ +30s timer fix (endAt as single source of truth)
-- ✅ Used questions (selectable with gold badge)
-
-### Sound System
-- ✅ 7 sound trigger events from socket.handler.ts
-- ✅ Sound manager utility (client/src/utils/soundManager.ts)
-- ✅ LiveAuctionScreen sound integration
-- ✅ Admin:sound_settings handler (global enable/volume)
-- ✅ Admin:sound_per_setting handler (per-sound enable/disable)
-- ✅ Server endpoints (GET /api/sounds, POST /api/sounds/upload)
-- ✅ Collapsible Sound Settings panel in AdminScreen
-
-### Branding
-- ✅ BrandHeader component (4 variants: live, scoreboard, admin, team)
-- ✅ All screens branded with logo + "Bid for C"
-- ✅ Entrance animation (fade-in + scale)
-- ✅ Tagline: "Bid Smart. Code Fast. Win Big."
-
-### Registration Redesign
-- ✅ Split layout with branding + form
-- ✅ Navy background, gold accents
-- ✅ Footer: About, How it Works, Winning Criteria
-
-### Global Theme System
-- ✅ CSS variables layer (client/src/theme.css)
-- ✅ ThemeContext for state management
-- ✅ Server stores currentTheme in memory
-- ✅ New clients get theme immediately on connect
-- ✅ Admin toggle: Default | Bid for C
-- ✅ Smooth 0.3s transitions between themes
-- ✅ design-system.ts tokens use CSS variables
-
-### LiveAuctionScreen Redesign (Just Completed)
-- ✅ State-based UI (idle, auction, ended, task, result)
-- ✅ Navy background, gold highlights
-- ✅ Timer at top center (large)
-- ✅ Massive bid display (`clamp(6rem, 18vw, 14rem)`)
-- ✅ Smooth animations (fadeScale, bidPop, pulse)
-- ✅ Winner display with glow effect
-- ✅ Task/Result states
+## Current Status
+- Scoreboard overhaul DONE (`client/src/pages/ScoreboardScreen.tsx`, tsc clean): 80px header matching Team/Live (center compact BrandHeader, empty spacers, no timer/controls); full-width centered top-5 layout; LEADERBOARD + "Top Performing Teams" title block; stable sort POINTS→COINS→name; system-color rank badges (#1 accent + crown, #2 primary, #3 outlined, #4/5 minimal); surface cards with elevation/glow emphasis (no gradient fills); socket+polling live updates with fixed off() cleanup; subtle layout/fade/number animations; "Waiting for results..." empty state; memoized + flicker guard.
+- Sound system standardized DONE (client + server tsc clean, no scattered play calls):
+  - `client/src/utils/soundManager.ts` rewritten: canonical types (auction_start, bid_placed, bid_win, timer_tick, timer_end, task_pass, task_fail, fallback_start, result_show) + legacy aliases; extensionless bases probed as .mp3 then .wav with cross-sound fallback chain; throttles (bid 200ms, tick 900ms); playUnique(eventKey) dedupe; volume normalization; localStorage persist (auc_sound_enabled/volume); global first-gesture unlock via installGlobalSoundUnlock().
+  - New `client/src/hooks/useSoundSystem.ts`: central socket event→sound map (auction/bid/win/timer:end/task:result/result:declared/phase fallback/extra-timer/tick≤5s + server sound:* mirrors) with cross-source once-guards (timer-end 3.5s, task-result 2.5s, fallback 6s, auction-start 2.5s).
+  - Wired: `useSoundSystem(socket)` in Admin, Team, Live, Scoreboard, Display; `installGlobalSoundUnlock()` once in App; LiveAuctionScreen scattered plays + local unlock removed; Admin toggles apply locally instantly + broadcast, init from persisted settings.
+- .wav + .mp3 support DONE: server `/api/sounds` resolves newest of name.mp3/name.wav (returns ext+path); upload takes ?ext= + Content-Type sniff, deletes sibling ext; manager probes both extensions; Admin upload accepts/picks wav|mp3 and shows real ext.
 
 ## Pending Tasks
-- Timer +30s glitch (needs exact reproduction steps)
-- Sound files not playing (likely browser autoplay policy)
-- Pre-existing TypeScript errors (design tokens, unused imports)
+- None active. (Historical notes: timer +30s glitch needs repro steps; autoplay-policy sound failures resolved via unlock gate; TS errors resolved — both projects tsc-clean.)
 
 ## Key Files
-- `server/src/handlers/socket.handler.ts` - Socket handlers + theme state
+- `server/src/handlers/socket.handler.ts` - Socket handlers + theme state + sound:* emits
+- `server/src/index.ts` - /api/sounds (mp3+wav resolve), /api/sounds/upload (ext-aware)
 - `server/src/services/auction.service.ts` - Bidding logic (ALLOWED_INCREMENTS=[20,50])
 - `server/src/services/manual-timer.service.ts` - Timer with endAt
-- `client/src/pages/LiveAuctionScreen.tsx` - Projector screen (state-based UI)
-- `client/src/pages/AdminScreen.tsx` - Admin panel + theme toggle
-- `client/src/pages/TeamScreen.tsx` - Team bidding + registration
-- `client/src/pages/ScoreboardScreen.tsx` - Leaderboard
-- `client/src/theme.css` - CSS variables (default + bidforc)
-- `client/src/design-system.ts` - Design tokens (CSS variables)
-- `client/src/contexts/ThemeContext.tsx` - Theme state
+- `client/src/pages/LiveAuctionScreen.tsx` - Projector screen, sounds via hook only
+- `client/src/pages/AdminScreen.tsx` - Admin panel + theme toggle + sound settings (local apply + upload wav/mp3)
+- `client/src/pages/TeamScreen.tsx` - Team bidding + registration + hook
+- `client/src/pages/ScoreboardScreen.tsx` - Overhauled leaderboard + hook
+- `client/src/pages/DisplayScreen.tsx` - Legacy display + hook
+- `client/src/hooks/useSoundSystem.ts` - Central event→sound bindings
+- `client/src/utils/soundManager.ts` - Singleton audio controller
+- `client/src/App.tsx` - Global sound unlock install
+- `client/src/theme.css`, `client/src/design-system.ts`, `client/src/contexts/ThemeContext.tsx`
 
 ## Socket Events
 - `admin:sound_settings` → `sound:settings`
 - `admin:sound_per_setting` → `sound:per_setting`
+- `sound:auction_started|bid_updated|bid_won|timer_stopped|task_result` mirrors consumed by useSoundSystem
+- `timer:end`, `task:result`, `result:declared`, `phase:changed` drive sounds
 - `admin:theme` → `theme:changed`
-
-## Theme System
-- Server stores `currentTheme` (default: "default")
-- On connect: server sends `theme:changed` immediately
-- Themes: default (navy/gold), bidforc (darker navy/brighter gold)
-- CSS variables switch with 0.3s ease transition
 
 ## Git Status
 - Branch: master

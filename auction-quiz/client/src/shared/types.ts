@@ -185,6 +185,8 @@ export interface ClientEvents {
   "client:get_scoreboard": (cb: (res: ScoreboardResponse) => void) => void;
   "client:get_game_state": (cb: (res: { success: boolean; gameState?: GameState; error?: string }) => void) => void;
   "state:request": (cb?: (res: FullSyncState) => void) => void;
+  /** Global sound bus: triggers from anywhere, played ONLY on Live Display. */
+  "sound:play": (data: { type: string; id?: string }) => void;
   "admin:submit_result": (
     data: { taskId: string; result: TaskResultDecision; rewardPoints?: number },
     cb: (res: ResultResponse) => void
@@ -420,6 +422,8 @@ export interface ServerEvents {
   "sound:task_result": (data: { result: "pass" | "fail" }) => void;
   "sound:settings": (data: { enabled: boolean; volume: number }) => void;
   "sound:per_setting": (data: { soundName: string; enabled: boolean }) => void;
+  /** Global sound bus (server → Live Display ONLY). */
+  "sound:play": (data: { type: string; id?: string }) => void;
   "theme:changed": (data: { theme: string }) => void;
 }
 

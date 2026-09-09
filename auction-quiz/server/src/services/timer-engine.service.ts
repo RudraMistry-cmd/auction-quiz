@@ -90,6 +90,7 @@ export class TimerEngineService {
 
   // ─── Task Timer (Manual, only allowed if winner exists, NEVER auto-start) ───
   public startMainTask(duration: number, onExpire?: () => void): TimestampTimer {
+    this.stopExtraTimer(); // Timer safety: stop extra timer before starting task timer
     if (this.mainTaskTimer && !this.mainTaskTimer.isRunning && this.mainTaskTimer.remaining > 0 && duration <= 0) {
       const remaining = this.mainTaskTimer.remaining;
       this.mainTaskTimer = {
@@ -114,14 +115,25 @@ export class TimerEngineService {
 
   public pauseMainTask(): TimestampTimer | null {
     if (!this.mainTaskTimer) return null;
-    const remaining = this.calcRemaining(this.mainTaskTimer);
-    this.mainTaskTimer = {
-      startTime: Date.now(),
-      duration: remaining,
-      remaining,
-      isRunning: false,
-      label: "Task Time Remaining",
-    };
+    if (this.mainTaskTimer.isRunning) {
+      const remaining = this.calcRemaining(this.mainTaskTimer);
+      this.mainTaskTimer = {
+        startTime: Date.now(),
+        duration: remaining,
+        remaining,
+        isRunning: false,
+        label: "Task Time Remaining",
+      };
+    } else {
+      const remaining = this.mainTaskTimer.remaining;
+      this.mainTaskTimer = {
+        startTime: Date.now(),
+        duration: remaining,
+        remaining,
+        isRunning: true,
+        label: "Task Time Remaining",
+      };
+    }
     return this.snapshot(this.mainTaskTimer);
   }
 
@@ -148,6 +160,7 @@ export class TimerEngineService {
 
   // ─── Extra Timer (Manual, used for fallback, editable label) ───
   public startExtraTimer(duration: number = 60, label: string = "Extra Timer", onExpire?: () => void): TimestampTimer {
+    this.stopMainTask(); // Timer safety: stop task timer before starting extra timer
     if (this.explicitTimer && !this.explicitTimer.isRunning && this.explicitTimer.remaining > 0 && duration <= 0) {
       const remaining = this.explicitTimer.remaining;
       this.explicitTimer = {
@@ -172,14 +185,25 @@ export class TimerEngineService {
 
   public pauseExtraTimer(): TimestampTimer | null {
     if (!this.explicitTimer) return null;
-    const remaining = this.calcRemaining(this.explicitTimer);
-    this.explicitTimer = {
-      startTime: Date.now(),
-      duration: remaining,
-      remaining,
-      isRunning: false,
-      label: this.explicitTimer.label || "Extra Timer",
-    };
+    if (this.explicitTimer.isRunning) {
+      const remaining = this.calcRemaining(this.explicitTimer);
+      this.explicitTimer = {
+        startTime: Date.now(),
+        duration: remaining,
+        remaining,
+        isRunning: false,
+        label: this.explicitTimer.label || "Extra Timer",
+      };
+    } else {
+      const remaining = this.explicitTimer.remaining;
+      this.explicitTimer = {
+        startTime: Date.now(),
+        duration: remaining,
+        remaining,
+        isRunning: true,
+        label: this.explicitTimer.label || "Extra Timer",
+      };
+    }
     return this.snapshot(this.explicitTimer);
   }
 

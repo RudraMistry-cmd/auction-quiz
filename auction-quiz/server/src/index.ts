@@ -124,6 +124,29 @@ async function main() {
   const soundsDir = path.join(__dirname, "../../client/public/sounds");
   const fs = require("fs");
 
+  // Audio formats accepted everywhere (upload, listing, playback).
+  const SOUND_EXTS = [".mp3", ".wav"] as const;
+
+  // Resolve the playable file for a sound name: whichever of
+  // <name>.mp3 / <name>.wav exists (newest wins when both exist).
+  const resolveSoundFile = (name: string): { exists: boolean; ext: string | null; path: string } => {
+    let best: { ext: string; mtime: number } | null = null;
+    for (const ext of SOUND_EXTS) {
+      const fp = path.join(soundsDir, `${name}${ext}`);
+      if (fs.existsSync(fp)) {
+        let mtime = 0;
+        try {
+          mtime = fs.statSync(fp).mtimeMs;
+        } catch {
+          mtime = 0;
+        }
+        if (!best || mtime >= best.mtime) best = { ext, mtime };
+      }
+    }
+    if (!best) return { exists: false, ext: null, path: `/sounds/${name}.mp3` };
+    return { exists: true, ext: best.ext, path: `/sounds/${name}${best.ext}` };
+  };
+
   // List available sound files
   app.get("/api/sounds", adminHttpAuth, (_req, res) => {
     try {
@@ -131,18 +154,14 @@ async function main() {
         "auction_start", "auction_end", "bid_small", "bid_big", "bid_win",
         "timer_start", "timer_end", "pass", "fail", "tick"
       ];
-      const files = soundNames.map((name) => {
-        const filePath = path.join(soundsDir, `${name}.mp3`);
-        const exists = fs.existsSync(filePath);
-        return { name, exists, path: `/sounds/${name}.mp3` };
-      });
+      const files = soundNames.map((name) => ({ name, ...resolveSoundFile(name) }));
       res.json({ success: true, sounds: files });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // Upload a sound file (multipart form)
+  // Upload a sound file (raw audio body; .mp3 or .wav)
   app.post("/api/sounds/upload", adminHttpAuth, express.raw({ type: "audio/*", limit: "5mb" }), (req, res) => {
     try {
       const soundName = req.query.name as string;
@@ -154,13 +173,38 @@ async function main() {
         res.status(400).json({ success: false, error: "No file data" });
         return;
       }
+      // Decide extension: explicit ?ext= wins, else sniff Content-Type.
+      const rawExt = String(req.query.ext || "").toLowerCase();
+      const ctype = String(req.headers["content-type"] || "").toLowerCase();
+      let ext = ".mp3";
+      if (rawExt === "wav" || rawExt === ".wav") ext = ".wav";
+      else if (rawExt === "mp3" || rawExt === ".mp3") ext = ".mp3";
+      else if (ctype.includes("wav") || ctype.includes("wave")) ext = ".wav";
+      else if (ctype.includes("mpeg") || ctype.includes("mp3")) ext = ".mp3";
+      if (!SOUND_EXTS.includes(ext as any)) {
+        res.status(400).json({ success: false, error: "Only .mp3 and .wav are supported" });
+        return;
+      }
       if (!fs.existsSync(soundsDir)) {
         fs.mkdirSync(soundsDir, { recursive: true });
       }
-      const filePath = path.join(soundsDir, `${soundName}.mp3`);
+      const filePath = path.join(soundsDir, `${soundName}${ext}`);
       fs.writeFileSync(filePath, req.body);
-      console.log(`[Sound] Uploaded: ${soundName}.mp3 (${req.body.length} bytes)`);
-      res.json({ success: true, name: soundName, path: `/sounds/${soundName}.mp3` });
+      // Remove the sibling extension so the fresh upload is unambiguous.
+      for (const other of SOUND_EXTS) {
+        if (other !== ext) {
+          const sibling = path.join(soundsDir, `${soundName}${other}`);
+          if (fs.existsSync(sibling)) {
+            try {
+              fs.unlinkSync(sibling);
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+      console.log(`[Sound] Uploaded: ${soundName}${ext} (${req.body.length} bytes)`);
+      res.json({ success: true, name: soundName, ext, path: `/sounds/${soundName}${ext}` });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

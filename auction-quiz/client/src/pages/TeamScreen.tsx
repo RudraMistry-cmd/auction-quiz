@@ -54,14 +54,16 @@ function HeaderTimerZone({
   isWinner,
   biddingTime,
   taskTime,
+  taskTimerRunning,
 }: {
   phase: string;
   isWinner: boolean;
   biddingTime: number;
   taskTime: number;
+  taskTimerRunning?: boolean;
 }) {
   const isBidding = phase === "bidding";
-  const isTask = phase === "main_task" && isWinner;
+  const isTask = (phase === "main_task" || !!taskTimerRunning) && isWinner;
 
   if (isBidding) {
     const isUrgent = biddingTime <= 10;
@@ -845,6 +847,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
             isWinner={isWinner}
             biddingTime={activeBiddingTime}
             taskTime={activeTaskTime}
+            taskTimerRunning={!!mainTaskTimer?.isRunning}
           />
         </div>
       </header>

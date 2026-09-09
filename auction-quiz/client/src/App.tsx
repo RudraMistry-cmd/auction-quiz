@@ -15,6 +15,7 @@ export const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET || "7f8a9b2c";
 export const ADMIN_ROUTE = `/control-panel-${ADMIN_SECRET}`;
 
 function App() {
+  // NOTE: No audio logic here — sound playback lives ONLY in LiveAuctionScreen.
   return (
     <ThemeProvider>
       <BrowserRouter>

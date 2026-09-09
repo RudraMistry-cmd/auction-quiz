@@ -17,6 +17,7 @@ interface ScoreboardTeam {
 
 export default function DisplayScreen() {
   const { socket, connected, phase, task, taskTimer, taskEnded, taskPaused, upcomingQuestion, activeQuestion } = useGamePhase();
+  // NOTE: No sound here — playback is Live Display ONLY.
   const [auction, setAuction] = useState<Auction | null>(null);
   const [currentBid, setCurrentBid] = useState<number>(0);
   const [leadingTeam, setLeadingTeam] = useState<string>("");

@@ -316,7 +316,8 @@ export function setupSocketHandlers(io: Server) {
           increment: data.increment,
         });
 
-        // Sound trigger for bid
+        // Sound trigger for bid (global bus: Live Display plays, others silent)
+        io.emit("sound:play", { type: "bid" });
         io.emit("sound:bid_updated", {
           teamName: team?.teamName || "Unknown",
           bidAmount: result.bid.amount,
@@ -336,6 +337,16 @@ export function setupSocketHandlers(io: Server) {
         console.error("[Socket] client:place_bid failed:", err);
         cb({ success: false, error: "Bid failed. Please try again." });
       }
+    });
+
+    // Global sound bus relay: triggers from anywhere (admin test buttons,
+    // team clients, server events) are rebroadcast here. ONLY the Live
+    // Display plays audio — every other screen stays silent.
+    socket.on("sound:play", (data: { type?: string; id?: string }) => {
+      const type = typeof data?.type === "string" ? data.type.trim().slice(0, 32) : "";
+      if (!type) return;
+      const id = typeof data?.id === "string" ? data.id.slice(0, 64) : undefined;
+      io.emit("sound:play", id ? { type, id } : ({ type } as { type: string; id?: string }));
     });
 
     socket.on("client:get_scoreboard", async (cb) => {
@@ -409,6 +420,7 @@ export function setupSocketHandlers(io: Server) {
           points: r.appliedReward,
         });
         io.emit("sound:task_result", { result: r.task.result as "pass" | "fail" });
+        io.emit("sound:play", { type: r.task.result === "pass" ? "pass" : "fail" });
         io.emit("scoreboard:updated", { teams: scoreboard });
         scheduleAutoReset();
         cb({ success: true, task: r.task as any, team: r.team as any });
@@ -649,6 +661,7 @@ export function setupSocketHandlers(io: Server) {
         const state = manualTimerService.pause();
         io.emit("manual_timer:update", state);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         cb({ success: true, ...state });
         console.log(`[Timer] Paused (${state.timeLeft}s left)`);
       } catch (err: any) {
@@ -662,6 +675,7 @@ export function setupSocketHandlers(io: Server) {
         const state = manualTimerService.reset();
         io.emit("manual_timer:update", state);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         cb({ success: true, ...state });
         console.log(`[Timer] Reset`);
       } catch (err: any) {
@@ -675,6 +689,7 @@ export function setupSocketHandlers(io: Server) {
         const state = manualTimerService.stop();
         io.emit("manual_timer:update", state);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         cb({ success: true, ...state });
         console.log(`[Timer] Stopped`);
       } catch (err: any) {
@@ -798,6 +813,11 @@ export function setupSocketHandlers(io: Server) {
     socket.on("admin:start_task_timer", async (data, cb) => {
       if (!requireAdmin(cb)) return;
       try {
+        const winner = stateManager.getWinningTeam();
+        if (!winner) {
+          cb({ success: false, error: "No team has won the bid" });
+          return;
+        }
         const curPhase = stateManager.getPhase();
         if (curPhase !== "post_bid_idle" && curPhase !== "main_task") {
           cb({ success: false, error: `Cannot start task timer in phase '${curPhase}'` });
@@ -819,6 +839,7 @@ export function setupSocketHandlers(io: Server) {
         const timer = timerEngineService.startMainTask(duration, () => {
           io.emit("timer:end", { timerType: "task" });
           io.emit("sound:timer_stopped");
+          io.emit("sound:play", { type: "timer_end" });
           io.emit("task:ended", { taskId: activeTask.taskId });
           io.emit("task:end", { taskId: activeTask.taskId });
         });
@@ -865,6 +886,7 @@ export function setupSocketHandlers(io: Server) {
         timerEngineService.pauseMainTask();
         io.emit("timer:update", timerEngineService.getTimers() as any);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
@@ -891,6 +913,7 @@ export function setupSocketHandlers(io: Server) {
         timerEngineService.stopMainTask();
         io.emit("timer:update", timerEngineService.getTimers() as any);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
@@ -902,8 +925,11 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const r = await taskService.failWithFallback();
         io.emit("sound:task_result", { result: "fail" });
+        io.emit("sound:play", { type: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
@@ -920,11 +946,14 @@ export function setupSocketHandlers(io: Server) {
       try {
         const duration = (data?.duration && data.duration > 0) ? data.duration : 60;
         const label = data?.label || "Extra Timer";
-        stateManager.startFallbackActive();
+        if (stateManager.getPhase() === "fallback_idle") {
+          stateManager.startFallbackActive();
+        }
 
         const timer = timerEngineService.startExtraTimer(duration, label, () => {
           io.emit("timer:end", { timerType: "extra" });
           io.emit("sound:timer_stopped");
+          io.emit("sound:play", { type: "timer_end" });
         });
 
         io.emit("timer:extra:start", {
@@ -961,6 +990,7 @@ export function setupSocketHandlers(io: Server) {
         timerEngineService.pauseExtraTimer();
         io.emit("timer:update", timerEngineService.getTimers() as any);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
@@ -987,6 +1017,7 @@ export function setupSocketHandlers(io: Server) {
         timerEngineService.stopExtraTimer();
         io.emit("timer:update", timerEngineService.getTimers() as any);
         io.emit("sound:timer_stopped");
+        io.emit("sound:play", { type: "timer_end" });
         await broadcastFullState();
         cb({ success: true });
       } catch (err: any) {
@@ -998,6 +1029,8 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const r = await taskService.passWinningTask();
         const scoreboard = await teamService.getScoreboard();
         io.emit("task:result", {
@@ -1016,6 +1049,7 @@ export function setupSocketHandlers(io: Server) {
           points: r.appliedReward,
         });
         io.emit("sound:task_result", { result: "pass" });
+        io.emit("sound:play", { type: "pass" });
         io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
         io.emit("team:update", { team: r.team });
@@ -1033,6 +1067,8 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const r = await taskService.failWinningTask();
         io.emit("task:result", {
           taskId: r.task.taskId,
@@ -1050,6 +1086,7 @@ export function setupSocketHandlers(io: Server) {
           points: 0,
         });
         io.emit("sound:task_result", { result: "fail" });
+        io.emit("sound:play", { type: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
@@ -1068,6 +1105,8 @@ export function setupSocketHandlers(io: Server) {
           return;
         }
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const winner = stateManager.getWinningTeam();
         const r = await taskService.assignFallbackTeam(data.teamId);
         const scoreboard = await teamService.getScoreboard();
@@ -1088,6 +1127,7 @@ export function setupSocketHandlers(io: Server) {
           winningTeamName: winner?.teamName,
         });
         io.emit("sound:task_result", { result: "pass" });
+        io.emit("sound:play", { type: "pass" });
         io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
         io.emit("team:update", { team: r.fallbackTeam });
@@ -1110,6 +1150,8 @@ export function setupSocketHandlers(io: Server) {
           return;
         }
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const winner = stateManager.getWinningTeam();
         const r = await taskService.assignFallbackTeam(data.teamId);
         const scoreboard = await teamService.getScoreboard();
@@ -1130,6 +1172,7 @@ export function setupSocketHandlers(io: Server) {
           winningTeamName: winner?.teamName,
         });
         io.emit("sound:task_result", { result: "pass" });
+        io.emit("sound:play", { type: "pass" });
         io.emit("scoreboard:update", { teams: scoreboard as any });
         io.emit("scoreboard:updated", { teams: scoreboard as any });
         io.emit("team:update", { team: r.fallbackTeam });
@@ -1147,6 +1190,8 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const winner = stateManager.getWinningTeam();
         const r = await taskService.endFailedTaskNormally();
         io.emit("result:declared", {
@@ -1155,6 +1200,7 @@ export function setupSocketHandlers(io: Server) {
           points: 0,
         });
         io.emit("sound:task_result", { result: "fail" });
+        io.emit("sound:play", { type: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
@@ -1170,6 +1216,8 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         resetManualTimer();
+        timerEngineService.stopMainTask();
+        timerEngineService.stopExtraTimer();
         const winner = stateManager.getWinningTeam();
         const r = await taskService.endFailedTaskNormally();
         io.emit("result:declared", {
@@ -1178,6 +1226,7 @@ export function setupSocketHandlers(io: Server) {
           points: 0,
         });
         io.emit("sound:task_result", { result: "fail" });
+        io.emit("sound:play", { type: "fail" });
         io.emit("phase:changed", stateManager.getGameState());
         io.emit("timer:update", timerEngineService.getTimers() as any);
         await broadcastFullState();
@@ -1365,6 +1414,7 @@ export function setupSocketHandlers(io: Server) {
       io.emit("auction:started", auction);
       io.emit("auction:start", auction);
       io.emit("sound:auction_started");
+      io.emit("sound:play", { type: "auction_start" });
 
       // Set phase to bidding and broadcast
       io.emit("phase:changed", stateManager.getGameState());
@@ -1377,6 +1427,7 @@ export function setupSocketHandlers(io: Server) {
           if (!result) return;
 
           io.emit("sound:auction_ended");
+          io.emit("sound:play", { type: "auction_end" });
 
           if (result.winner && result.winningBid != null) {
             // BID WIN (CRITICAL FLOW)
@@ -1411,6 +1462,7 @@ export function setupSocketHandlers(io: Server) {
                 teamName: result.winner.teamName,
                 bidAmount: result.winningBid,
               });
+              io.emit("sound:play", { type: "win" });
               io.emit("task:assigned", task as any);
 
               const scoreboard = await teamService.getScoreboard();

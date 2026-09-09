@@ -3,6 +3,7 @@ import { getServerBase } from "../hooks/useSocket";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
 import { BrandHeader } from "../components/BrandHeader";
 import { tokens } from "../design-system";
+import { useSoundSystem } from "../hooks/useSoundSystem";
 import { soundManager } from "../utils/soundManager";
 import type { Auction, Bid, TaskResultEvent } from "../shared/types";
 
@@ -55,6 +56,26 @@ export default function LiveAuctionScreen() {
 
   const prevBid = useRef(0);
   const autoResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // SOUND: this screen is the ONLY playback site in the app.
+  // Event-driven triggers via useSoundSystem; unlock requires a user gesture.
+  useSoundSystem(socket);
+  const [soundReady, setSoundReady] = useState(() => soundManager.isUnlocked());
+
+  // Autoplay policy: first interaction anywhere unlocks + preloads audio.
+  useEffect(() => {
+    if (soundReady) return;
+    const enable = () => {
+      soundManager.unlock();
+      setSoundReady(true);
+    };
+    document.addEventListener("pointerdown", enable, { once: true });
+    document.addEventListener("keydown", enable, { once: true });
+    return () => {
+      document.removeEventListener("pointerdown", enable);
+      document.removeEventListener("keydown", enable);
+    };
+  }, [soundReady]);
 
   // Sync gameBid and flash
   useEffect(() => {
@@ -127,8 +148,7 @@ export default function LiveAuctionScreen() {
       setCurrentBid(startAmount);
       setLeadingTeam("");
       setTimer(a?.duration || 60);
-      if (a?.question) setQuestionImage(a.question);
-      soundManager.play("auction_start");
+      if (a?.question) setQuestionImage(a.question.image);
     };
 
     // 2. Bid Update
@@ -147,8 +167,6 @@ export default function LiveAuctionScreen() {
         };
         return [entry, ...prev].slice(0, 5);
       });
-
-      soundManager.play(data.increment === 50 ? "bid_big" : "bid_small");
     };
 
     // 3. Auction Win / End
@@ -156,7 +174,6 @@ export default function LiveAuctionScreen() {
       if (data.winner && data.winningBid != null) {
         setWinner({ teamName: data.winner.teamName, bid: data.winningBid });
         setLeadingTeam(data.winner.teamName);
-        soundManager.play("bid_win");
       } else {
         setWinner(null);
       }
@@ -175,12 +192,6 @@ export default function LiveAuctionScreen() {
         points: data.points,
       });
 
-      if (data.result === "pass") {
-        soundManager.play("pass");
-      } else {
-        soundManager.play("fail");
-      }
-
       // State 4: Auto-reset after 5.0s
       if (autoResetTimeoutRef.current) clearTimeout(autoResetTimeoutRef.current);
       autoResetTimeoutRef.current = setTimeout(() => {
@@ -194,12 +205,6 @@ export default function LiveAuctionScreen() {
         teamName: data.teamName,
         points: data.rewardGranted,
       });
-
-      if (data.result === "pass") {
-        soundManager.play("pass");
-      } else {
-        soundManager.play("fail");
-      }
 
       if (autoResetTimeoutRef.current) clearTimeout(autoResetTimeoutRef.current);
       autoResetTimeoutRef.current = setTimeout(() => {
@@ -263,31 +268,13 @@ export default function LiveAuctionScreen() {
     };
   }, [socket]);
 
-  // Audio unlock on user interaction
-  useEffect(() => {
-    const unlockAudio = () => {
-      soundManager.unlock();
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("keydown", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-    };
-    document.addEventListener("click", unlockAudio);
-    document.addEventListener("keydown", unlockAudio);
-    document.addEventListener("touchstart", unlockAudio);
-    return () => {
-      document.removeEventListener("click", unlockAudio);
-      document.removeEventListener("keydown", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-    };
-  }, []);
-
   // Derived state resolution
   const isBiddingPhase = phase === "bidding";
-  const isPostBidIdle = phase === "post_bid_idle" && !resultData;
-  const isTaskPhase = phase === "main_task" && !resultData;
-  const isFallbackIdle = phase === "fallback_idle" && !resultData;
-  const isFallbackActive = phase === "fallback_active" && !resultData;
   const isResultState = phase === "result_display" || resultData !== null;
+  const isTaskPhase = (phase === "main_task" || (!!mainTaskTimer?.isRunning && !isBiddingPhase)) && !isResultState;
+  const isFallbackActive = (phase === "fallback_active" || (!!extraTimer?.isRunning && !isBiddingPhase && !isTaskPhase)) && !isResultState;
+  const isFallbackIdle = phase === "fallback_idle" && !isFallbackActive && !isResultState;
+  const isPostBidIdle = phase === "post_bid_idle" && !isTaskPhase && !isFallbackActive && !isResultState;
   const isIdleState = !isBiddingPhase && !isPostBidIdle && !isTaskPhase && !isFallbackIdle && !isFallbackActive && !isResultState;
 
   // Active question image resolution
@@ -304,6 +291,19 @@ export default function LiveAuctionScreen() {
   return (
     <div style={root}>
       <style>{liveStyles}</style>
+
+      {/* Autoplay gate: visible until first interaction unlocks audio. */}
+      {!soundReady && (
+        <button
+          onClick={() => {
+            soundManager.unlock();
+            setSoundReady(true);
+          }}
+          style={enableSoundBtn}
+        >
+          🔊 Enable Sound
+        </button>
+      )}
 
       {/* ─── 1. TOP HEADER ROW (80px Fixed Height) ─── */}
       <header style={headerStyle}>
@@ -800,6 +800,26 @@ const root: React.CSSProperties = {
   fontFamily: F.body,
   userSelect: "none",
   boxSizing: "border-box",
+};
+
+/* "Enable Sound" autoplay-gate button (hidden after first interaction). */
+const enableSoundBtn: React.CSSProperties = {
+  position: "fixed",
+  bottom: "28px",
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 1000,
+  padding: "14px 32px",
+  borderRadius: tokens.radius.full,
+  border: `2px solid ${C.accent}`,
+  backgroundColor: C.accent,
+  color: "#0F172A",
+  fontFamily: F.heading,
+  fontWeight: 800,
+  fontSize: "1.05rem",
+  letterSpacing: "0.04em",
+  cursor: "pointer",
+  boxShadow: `0 8px 32px ${C.accent}66`,
 };
 
 const headerStyle: React.CSSProperties = {

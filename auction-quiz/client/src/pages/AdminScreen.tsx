@@ -3,6 +3,7 @@ import { getServerBase } from "../hooks/useSocket";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
 import { BrandHeader } from "../components/BrandHeader";
 import { tokens, tabular } from "../design-system";
+import { soundManager } from "../utils/soundManager";
 import type { Auction, Bid } from "../shared/types";
 
 const C = tokens.color;
@@ -60,10 +61,11 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     biddingTimer,
     mainTaskTimer,
     extraTimer,
-    taskTimer,
     activeAuction,
     scoreboard: phaseScoreboard,
   } = useGamePhase();
+  // NOTE: No sound playback here — admin only broadcasts settings.
+  // Playback happens strictly on the Live Display screen.
   const [isAdminVerified, setIsAdminVerified] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [auction, setAuction] = useState<Auction | null>(null);
@@ -80,11 +82,13 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [extraTimerLabel, setExtraTimerLabel] = useState<string>("Extra Timer");
   const [taskTimerBusy, setTaskTimerBusy] = useState(false);
   const [extraTimerBusy, setExtraTimerBusy] = useState(false);
+  const [timerPurpose, setTimerPurpose] = useState<"task" | "extra">("task");
 
-  // Sync taskTimerDuration to question time if selected
+  // Sync taskTimerDuration & timerDuration to question time if selected
   useEffect(() => {
     if (phaseQuestion?.time) {
       setTaskTimerDuration(phaseQuestion.time);
+      setTimerDuration(phaseQuestion.time);
     }
   }, [phaseQuestion?.time]);
 
@@ -121,23 +125,17 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
   // Manual timer control state
   const [timerDuration, setTimerDuration] = useState(60);
-  const [timerState, setTimerState] = useState<{
-    duration: number;
-    endAt: number | null;
-    isRunning: boolean;
-    timeLeft: number;
-  }>({ duration: 0, endAt: null, isRunning: false, timeLeft: 0 });
-  const [timerBusy, setTimerBusy] = useState(false);
 
-  // Sound control state
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [soundVolume, setSoundVolume] = useState(100);
+  // Sound control state (initialized from persisted local settings; the
+  // global toggle/volume broadcast to the Live Display via socket).
+  const [soundEnabled, setSoundEnabled] = useState(() => soundManager.isEnabled());
+  const [soundVolume, setSoundVolume] = useState(() => soundManager.getVolume());
   const [soundPanelOpen, setSoundPanelOpen] = useState(false);
   const [perSoundEnabled, setPerSoundEnabled] = useState<Record<string, boolean>>({
     auction_start: true, auction_end: true, bid_small: true, bid_big: true,
     bid_win: true, timer_start: true, timer_end: true, pass: true, fail: true, tick: true,
   });
-  const [soundFiles, setSoundFiles] = useState<{ name: string; exists: boolean }[]>([]);
+  const [soundFiles, setSoundFiles] = useState<{ name: string; exists: boolean; ext?: string | null; path?: string }[]>([]);
   const [uploadingSound, setUploadingSound] = useState<string | null>(null);
 
   // Data Management state
@@ -193,14 +191,18 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const uploadSound = async (soundName: string, file: File) => {
     setUploadingSound(soundName);
     try {
-      const res = await fetch(`${getServerBase()}/api/sounds/upload?name=${soundName}&secret=${secret}`, {
+      // Support .wav and .mp3: extension from filename, falling back to MIME.
+      const lower = file.name.toLowerCase();
+      const isWav = lower.endsWith(".wav") || file.type.includes("wav") || file.type.includes("wave");
+      const ext = isWav ? "wav" : "mp3";
+      const res = await fetch(`${getServerBase()}/api/sounds/upload?name=${soundName}&ext=${ext}&secret=${secret}`, {
         method: "POST",
-        headers: { "Content-Type": "audio/mpeg" },
+        headers: { "Content-Type": isWav ? "audio/wav" : "audio/mpeg" },
         body: file,
       });
       const data = await res.json();
       if (data.success) {
-        setLastEvent(`Sound uploaded: ${soundName}.mp3`);
+        setLastEvent(`Sound uploaded: ${soundName}.${data.ext || ext}`);
         fetchSounds();
       } else {
         setLastEvent(`Error: ${data.error || "upload failed"}`);
@@ -287,13 +289,8 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
     const handleScores = () => fetchScoreboard();
 
-    const handleTimerUpdate = (data: any) => {
-      setTimerState({
-        duration: data.duration ?? 0,
-        endAt: data.endAt ?? null,
-        isRunning: data.isRunning ?? false,
-        timeLeft: data.isRunning ? (data.timeLeft ?? 0) : 0,
-      });
+    const handleTimerUpdate = (_data: any) => {
+      // Manual timer update acknowledged
     };
 
     const handleFullState = (data: any) => {
@@ -667,41 +664,37 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     }
   };
 
-  // Manual timer control functions
-  const manualTimerAction = (event: string, data: any) => {
-    if (!socket || timerBusy) return;
-    setTimerBusy(true);
-    const safetyReset = setTimeout(() => setTimerBusy(false), 5000);
-    socket.emit(event as any, data, (res: any) => {
-      clearTimeout(safetyReset);
-      setTimerBusy(false);
-      if (res.success) {
-        setTimerState({
-          duration: res.duration ?? 0,
-          endAt: res.endAt ?? null,
-          isRunning: res.isRunning ?? false,
-          timeLeft: res.timeLeft ?? 0,
-        });
-        setLastEvent(`Timer: ${event.replace("admin:timer_", "")} (${res.timeLeft ?? 0}s)`);
-      } else {
-        setLastEvent(`Error: ${res.error || "timer action failed"}`);
-      }
-    });
-  };
 
-  const timerSetDuration = () => manualTimerAction("admin:timer_set_duration", { duration: timerDuration });
-  const timerStart = () => {
-    if (timerState.isRunning) return;
-    manualTimerAction("admin:timer_start", { duration: timerDuration > 0 ? timerDuration : (timerState.duration > 0 ? timerState.duration : 60) });
-  };
-  const timerPause = () => {
-    if (!timerState.isRunning) return;
-    manualTimerAction("admin:timer_pause", {});
-  };
-  const timerReset = () => manualTimerAction("admin:timer_reset", {});
-  const timerAdd30 = () => manualTimerAction("admin:timer_adjust", { seconds: 30 });
 
   const isActive = auction?.status === "active" && timer > 0;
+
+  const isTaskRunning = !!mainTaskTimer?.isRunning;
+  const isExtraRunning = !!extraTimer?.isRunning;
+  const isAnyTimerRunning = isTaskRunning || isExtraRunning;
+  const hasTaskTimer = !!(mainTaskTimer && mainTaskTimer.remaining > 0);
+  const hasExtraTimer = !!(extraTimer && extraTimer.remaining > 0);
+  const hasActivePaused = (!isAnyTimerRunning) && (hasTaskTimer || hasExtraTimer);
+  const hasWinner = !!(phaseWinner?.teamId || phaseWinner?.teamName);
+
+  let timerDisplayRemaining = timerDuration;
+  let timerStatusText = "Ready / Stopped";
+  let isTimerUrgent = false;
+
+  if (isTaskRunning) {
+    timerDisplayRemaining = mainTaskTimer!.remaining;
+    timerStatusText = `Task Timer: Running (${phaseWinner?.teamName || "Winner"})`;
+    isTimerUrgent = timerDisplayRemaining <= 30;
+  } else if (isExtraRunning) {
+    timerDisplayRemaining = extraTimer!.remaining;
+    timerStatusText = `Extra Timer: Running`;
+    isTimerUrgent = timerDisplayRemaining <= 30;
+  } else if (hasTaskTimer) {
+    timerDisplayRemaining = mainTaskTimer!.remaining;
+    timerStatusText = `Task Timer: Paused`;
+  } else if (hasExtraTimer) {
+    timerDisplayRemaining = extraTimer!.remaining;
+    timerStatusText = `Extra Timer: Paused`;
+  }
 
   return (
     <div style={{
@@ -824,27 +817,218 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           {lastEvent && <div style={styles.lastEvent}>{lastEvent}</div>}
         </Card>
 
-        <Card title="Manual Timer" span={4}>
-          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Admin-controlled countdown (independent of auction/task timers).</p>
-          <div style={styles.timerPreview}>
-            <span style={{ ...styles.timerPreviewValue, color: timerState.isRunning ? (timerState.timeLeft <= 10 ? C.danger : timerState.timeLeft <= 30 ? C.accent : C.success) : C.muted }}>
-              {formatClock(timerState.isRunning ? timerState.timeLeft : 0)}
-            </span>
-            <span style={styles.timerPreviewLabel}>{timerState.isRunning ? "Running" : "Stopped"}</span>
+        <Card title="Manual Timer Control" span={4}>
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>
+            Single authoritative controller for task & extra timers.
+          </p>
+
+          {/* 1. Timer Purpose Dropdown */}
+          <div style={{ marginBottom: "0.75rem" }}>
+            <label style={{ fontSize: "0.75rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "4px" }}>
+              Timer Purpose *
+            </label>
+            <select
+              value={timerPurpose}
+              onChange={(e) => setTimerPurpose(e.target.value as "task" | "extra")}
+              disabled={isAnyTimerRunning || taskTimerBusy || extraTimerBusy}
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: "6px",
+                border: `1px solid ${C.border}`,
+                backgroundColor: C.surface,
+                color: C.text,
+                fontFamily: F.body,
+                fontSize: "0.85rem",
+                fontWeight: 600,
+              }}
+            >
+              <option value="task">Task Timer (Winner & Live Display)</option>
+              <option value="extra">Extra Timer (Live Display Only)</option>
+            </select>
           </div>
-          <div style={styles.timerInputRow}>
-            <label style={styles.timerInputLabel}>Duration (s)</label>
-            <input style={styles.timerInput} type="number" min={1} max={3600} value={timerDuration} onChange={(e) => setTimerDuration(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={timerBusy} />
-          </div>
-          <div style={styles.timerBtnRow}>
-            <button onClick={timerSetDuration} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>Set</button>
-            {!timerState.isRunning ? (
-              <button onClick={timerStart} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.success }}>Start</button>
+
+          {/* 2. Target / Validation Notice */}
+          {timerPurpose === "task" ? (
+            !hasWinner ? (
+              <div style={{
+                padding: "8px 10px",
+                borderRadius: "6px",
+                backgroundColor: `${C.danger}18`,
+                border: `1px solid ${C.danger}50`,
+                color: C.danger,
+                fontSize: "0.8rem",
+                fontWeight: 700,
+                marginBottom: "0.75rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}>
+                <span>⚠️</span>
+                <span>No team has won the bid</span>
+              </div>
             ) : (
-              <button onClick={timerPause} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.accent }}>Pause</button>
+              <div style={{
+                padding: "8px 10px",
+                borderRadius: "6px",
+                backgroundColor: `${C.success}15`,
+                border: `1px solid ${C.success}40`,
+                color: C.success,
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                marginBottom: "0.75rem",
+              }}>
+                Target: <strong>{phaseWinner?.teamName || "Winner"}</strong> & Live Projector
+              </div>
+            )
+          ) : (
+            <div style={{
+              padding: "8px 10px",
+              borderRadius: "6px",
+              backgroundColor: `${C.accent}15`,
+              border: `1px solid ${C.accent}40`,
+              color: C.accent,
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              marginBottom: "0.75rem",
+            }}>
+              Target: <strong>Live Projector Only</strong> (Hidden from all teams)
+            </div>
+          )}
+
+          {/* 3. Timer Preview Display */}
+          <div style={styles.timerPreview}>
+            <span style={{
+              ...styles.timerPreviewValue,
+              color: isAnyTimerRunning
+                ? (isTimerUrgent ? C.danger : timerPurpose === "task" ? C.primary : C.accent)
+                : hasActivePaused
+                ? C.warning
+                : C.muted,
+            }}>
+              {formatClock(timerDisplayRemaining)}
+            </span>
+            <span style={styles.timerPreviewLabel}>{timerStatusText}</span>
+          </div>
+
+          {/* 4. Duration & Label Input */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "0.75rem", alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "4px" }}>
+                Duration (sec)
+              </label>
+              <input
+                style={{
+                  ...styles.timerInput,
+                  width: "100%",
+                }}
+                type="number"
+                min={5}
+                max={3600}
+                value={timerDuration}
+                onChange={(e) => {
+                  const val = Math.max(5, parseInt(e.target.value, 10) || 5);
+                  setTimerDuration(val);
+                  setTaskTimerDuration(val);
+                  setExtraTimerDuration(val);
+                }}
+                disabled={isAnyTimerRunning || taskTimerBusy || extraTimerBusy}
+              />
+            </div>
+
+            {timerPurpose === "extra" && (
+              <div style={{ flex: 1.5 }}>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "4px" }}>
+                  Label
+                </label>
+                <input
+                  style={{
+                    ...styles.timerInput,
+                    width: "100%",
+                    textAlign: "left",
+                  }}
+                  type="text"
+                  placeholder="Extra Timer"
+                  value={extraTimerLabel}
+                  onChange={(e) => setExtraTimerLabel(e.target.value)}
+                  disabled={isAnyTimerRunning || taskTimerBusy || extraTimerBusy}
+                />
+              </div>
             )}
-            <button onClick={timerReset} disabled={timerBusy} style={{ ...styles.timerCtrlBtn, backgroundColor: C.danger }}>Reset</button>
-            <button onClick={timerAdd30} disabled={timerBusy || !timerState.isRunning} style={{ ...styles.timerCtrlBtn, backgroundColor: C.info }}>+30s</button>
+          </div>
+
+          {/* 5. Control Buttons */}
+          <div style={styles.timerBtnRow}>
+            {!isAnyTimerRunning && !hasActivePaused ? (
+              <button
+                onClick={() => {
+                  if (timerPurpose === "task") {
+                    if (!hasWinner) return;
+                    startTaskTimer(timerDuration);
+                  } else {
+                    startExtraTimer(timerDuration, extraTimerLabel);
+                  }
+                }}
+                disabled={
+                  taskTimerBusy ||
+                  extraTimerBusy ||
+                  (timerPurpose === "task" && !hasWinner)
+                }
+                style={{
+                  ...styles.timerCtrlBtn,
+                  flex: 1,
+                  backgroundColor: (timerPurpose === "task" && !hasWinner) ? `${C.border}` : C.success,
+                  cursor: (timerPurpose === "task" && !hasWinner) ? "not-allowed" : "pointer",
+                  opacity: (timerPurpose === "task" && !hasWinner) ? 0.5 : 1,
+                }}
+              >
+                ▶ Start {timerPurpose === "task" ? "Task Timer" : "Extra Timer"}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    if (isTaskRunning || hasTaskTimer) pauseTaskTimer();
+                    else if (isExtraRunning || hasExtraTimer) pauseExtraTimer();
+                  }}
+                  disabled={taskTimerBusy || extraTimerBusy}
+                  style={{
+                    ...styles.timerCtrlBtn,
+                    backgroundColor: isAnyTimerRunning ? C.accent : C.success,
+                  }}
+                >
+                  {isAnyTimerRunning ? "Pause" : "Resume"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (isTaskRunning || hasTaskTimer) adjustTaskTimer(30);
+                    else if (isExtraRunning || hasExtraTimer) adjustExtraTimer(30);
+                  }}
+                  disabled={taskTimerBusy || extraTimerBusy}
+                  style={{
+                    ...styles.timerCtrlBtn,
+                    backgroundColor: C.info,
+                  }}
+                >
+                  +30s
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (isTaskRunning || hasTaskTimer) stopTaskTimer();
+                    if (isExtraRunning || hasExtraTimer) stopExtraTimer();
+                  }}
+                  disabled={taskTimerBusy || extraTimerBusy}
+                  style={{
+                    ...styles.timerCtrlBtn,
+                    backgroundColor: C.danger,
+                  }}
+                >
+                  Stop
+                </button>
+              </>
+            )}
           </div>
         </Card>
 
@@ -939,6 +1123,8 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   onClick={() => {
                     const newEnabled = !soundEnabled;
                     setSoundEnabled(newEnabled);
+                    // Apply instantly locally, then broadcast to all clients.
+                    soundManager.applySettings({ enabled: newEnabled, volume: soundVolume });
                     socket?.emit("admin:sound_settings", { enabled: newEnabled, volume: soundVolume }, (res) => {
                       if (!res.success) console.error("[Sound] Failed:", res.error);
                     });
@@ -969,12 +1155,39 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   onChange={(e) => {
                     const vol = parseInt(e.target.value, 10);
                     setSoundVolume(vol);
+                    soundManager.applySettings({ enabled: soundEnabled, volume: vol });
                     socket?.emit("admin:sound_settings", { enabled: soundEnabled, volume: vol }, (res) => {
                       if (!res.success) console.error("[Sound] Failed:", res.error);
                     });
                   }}
                   style={{ width: "100%", height: "6px", borderRadius: "3px", backgroundColor: C.border, cursor: "pointer", accentColor: C.accent }}
                 />
+              </div>
+
+              {/* Sound Test (emit-only): plays on the Live Display, silent here.
+                  Admin NEVER plays audio locally — these only emit the bus. */}
+              <div>
+                <div style={{ fontWeight: 600, color: C.text, fontSize: "0.9rem", marginBottom: "4px" }}>Sound Test → Live Display</div>
+                <div style={{ fontSize: "0.75rem", color: C.muted, marginBottom: "8px" }}>
+                  Fires the global sound bus. You will hear nothing here — sound plays only on the Live Display.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {(["bid", "win", "pass", "fail", "timer_end", "auction_start"] as const).map((type) => (
+                    <div key={type} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0" }}>
+                      <span style={{ fontSize: "0.8rem", color: C.text, fontFamily: "monospace" }}>{type}</span>
+                      <button
+                        onClick={() => socket?.emit("sound:play", { type })}
+                        style={{
+                          padding: "4px 12px", borderRadius: "8px", cursor: "pointer",
+                          border: `1px solid ${C.accent}`, backgroundColor: `${C.accent}15`,
+                          color: C.text, fontSize: "0.75rem", fontWeight: 700,
+                        }}
+                      >
+                        ▶ Test
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Per-Sound Toggles */}
@@ -988,6 +1201,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                         onClick={() => {
                           const newEnabled = !perSoundEnabled[name];
                           setPerSoundEnabled((prev) => ({ ...prev, [name]: newEnabled }));
+                          soundManager.setPerSoundEnabled(name, newEnabled);
                           socket?.emit("admin:sound_per_setting", { soundName: name, enabled: newEnabled }, (res) => {
                             if (!res.success) console.error("[Sound] Failed:", res.error);
                           });
@@ -1019,9 +1233,9 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     const isUploading = uploadingSound === name;
                     return (
                       <div key={name} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.75rem" }}>
-                        <span style={{ fontFamily: "monospace", color: C.text, minWidth: "100px" }}>{name}.mp3</span>
+                        <span style={{ fontFamily: "monospace", color: C.text, minWidth: "100px" }}>{name}.{file?.ext || "mp3"}</span>
                         <span style={{ color: file?.exists ? C.success : C.muted, fontSize: "0.7rem" }}>
-                          {file?.exists ? "✓" : "—"}
+                          {file?.exists ? `✓ ${file.ext || "mp3"}` : "—"}
                         </span>
                         <label style={{
                           marginLeft: "auto", cursor: "pointer", color: C.accent,
@@ -1030,7 +1244,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                         }}>
                           {isUploading ? "Uploading..." : "Upload"}
                           <input
-                            type="file" accept="audio/mpeg,audio/mp3" style={{ display: "none" }}
+                            type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,.mp3,.wav" style={{ display: "none" }}
                             disabled={isUploading}
                             onChange={(e) => {
                               const file = e.target.files?.[0];
@@ -1343,50 +1557,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                 backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
                 fontSize: "0.85rem", color: C.text,
               }}>
-                Coins have been deducted from <strong>{phaseWinner?.teamName || "winner"}</strong>. Task timer does <strong>NOT</strong> start automatically. Start the timer below when ready.
-              </div>
-
-              {/* Start Task Timer Controls */}
-              <div style={{
-                padding: "1rem", borderRadius: "0.75rem",
-                backgroundColor: C.bg, border: `1px solid ${C.border}`,
-                display: "flex", flexDirection: "column", gap: "0.75rem",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.primary, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Start Task Timer
-                  </span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <label style={{ fontSize: "0.8rem", color: C.muted, fontWeight: 600 }}>Duration:</label>
-                    <input
-                      type="number"
-                      min={5}
-                      max={600}
-                      value={taskTimerDuration}
-                      onChange={(e) => setTaskTimerDuration(Math.max(5, parseInt(e.target.value, 10) || 60))}
-                      disabled={taskTimerBusy}
-                      style={{
-                        width: "70px", padding: "4px 8px", borderRadius: "6px",
-                        border: `1px solid ${C.border}`, backgroundColor: C.surface, color: C.text,
-                        fontFamily: F.mono, fontWeight: 700, textAlign: "center",
-                      }}
-                    />
-                    <span style={{ fontSize: "0.8rem", color: C.muted }}>sec</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => startTaskTimer(taskTimerDuration)}
-                  disabled={taskTimerBusy}
-                  style={{
-                    width: "100%", padding: "0.9rem", borderRadius: "0.75rem",
-                    border: "none", backgroundColor: C.primary, color: "#fff",
-                    fontSize: "1.05rem", fontWeight: 800, cursor: taskTimerBusy ? "not-allowed" : "pointer",
-                    opacity: taskTimerBusy ? 0.6 : 1, transition: "all 0.2s ease",
-                  }}
-                >
-                  ▶ Start Task Timer ({taskTimerDuration}s)
-                </button>
+                Coins have been deducted from <strong>{phaseWinner?.teamName || "winner"}</strong>. Task timers are controlled from the <strong>Manual Timer Control</strong> panel above. Verdicts can be submitted directly below at any time.
               </div>
 
               {/* Direct Verdict Options */}
@@ -1448,30 +1619,12 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                 </div>
               )}
 
-              {/* Timer Display */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem", borderRadius: "0.75rem", backgroundColor: C.bg, border: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.25rem" }}>
-                  Task Time Remaining {mainTaskTimer?.isRunning === false ? "(PAUSED)" : ""}
-                </div>
-                <div style={{ ...styles.taskTimer, color: ((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0) <= 30 ? C.danger : C.primary }}>
-                  {formatClock((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0)}
-                </div>
-                {(((mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0) <= 0) && (
-                  <div style={{ ...styles.timeUpNote, marginTop: "0.5rem" }}>Time Expired (Sound Played) — Ready for Verdict</div>
-                )}
-              </div>
-
-              {/* Task Timer Controls */}
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <button onClick={pauseTaskTimer} disabled={taskTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
-                  {mainTaskTimer?.isRunning === false ? "Resume" : "Pause"}
-                </button>
-                <button onClick={() => adjustTaskTimer(30)} disabled={taskTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
-                  +30s
-                </button>
-                <button onClick={stopTaskTimer} disabled={taskTimerBusy} style={{ ...styles.timerBtn, flex: 1, backgroundColor: `${C.danger}30`, borderColor: C.danger, color: C.danger }}>
-                  Stop
-                </button>
+              <div style={{
+                padding: "8px 12px", borderRadius: "6px",
+                backgroundColor: `${C.primary}10`, border: `1px solid ${C.primary}30`,
+                fontSize: "0.82rem", color: C.text,
+              }}>
+                Task timer is managed via the <strong>Manual Timer Control</strong> panel above. Verdicts can be issued at any time independently of any timer.
               </div>
 
               {/* Verdict Section */}
@@ -1532,57 +1685,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                 backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}40`,
                 fontSize: "0.85rem", color: C.text,
               }}>
-                Primary team {phaseWinner?.teamName ? `(${phaseWinner.teamName})` : ""} failed. Fallback is open to other teams. Start Extra Timer when ready.
-              </div>
-
-              {/* Extra Timer Setup */}
-              <div style={{
-                padding: "1rem", borderRadius: "0.75rem",
-                backgroundColor: C.bg, border: `1px solid ${C.border}`,
-                display: "flex", flexDirection: "column", gap: "0.75rem",
-              }}>
-                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Start Extra Timer
-                </span>
-                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                  <input
-                    type="text"
-                    placeholder="Timer Label (e.g. Extra Timer)"
-                    value={extraTimerLabel}
-                    onChange={(e) => setExtraTimerLabel(e.target.value)}
-                    disabled={extraTimerBusy}
-                    style={{
-                      flex: 1, padding: "8px 12px", borderRadius: "6px",
-                      border: `1px solid ${C.border}`, backgroundColor: C.surface, color: C.text,
-                      fontFamily: F.body, fontSize: "0.85rem",
-                    }}
-                  />
-                  <input
-                    type="number"
-                    min={5}
-                    max={600}
-                    value={extraTimerDuration}
-                    onChange={(e) => setExtraTimerDuration(Math.max(5, parseInt(e.target.value, 10) || 60))}
-                    disabled={extraTimerBusy}
-                    style={{
-                      width: "70px", padding: "8px 6px", borderRadius: "6px",
-                      border: `1px solid ${C.border}`, backgroundColor: C.surface, color: C.text,
-                      fontFamily: F.mono, fontWeight: 700, textAlign: "center",
-                    }}
-                  />
-                  <span style={{ fontSize: "0.8rem", color: C.muted }}>sec</span>
-                </div>
-                <button
-                  onClick={() => startExtraTimer(extraTimerDuration, extraTimerLabel)}
-                  disabled={extraTimerBusy}
-                  style={{
-                    width: "100%", padding: "0.85rem", borderRadius: "0.75rem",
-                    border: "none", backgroundColor: C.accent, color: "#fff",
-                    fontSize: "1rem", fontWeight: 800, cursor: extraTimerBusy ? "not-allowed" : "pointer",
-                  }}
-                >
-                  ▶ Start Extra Timer ({extraTimerDuration}s)
-                </button>
+                Primary team {phaseWinner?.teamName ? `(${phaseWinner.teamName})` : ""} failed. Fallback is open to other teams. If a countdown is needed on the Live Display, start an Extra Timer using the <strong>Manual Timer Control</strong> panel above.
               </div>
 
               {/* Fallback Team Selection & Award */}
@@ -1651,30 +1754,12 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                 </span>
               </div>
 
-              {/* Extra Timer Display */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "1.25rem", borderRadius: "0.75rem", backgroundColor: C.bg, border: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.25rem" }}>
-                  {extraTimer?.label?.toUpperCase() || "EXTRA TIMER"} {extraTimer?.isRunning === false ? "(PAUSED)" : ""}
-                </div>
-                <div style={{ ...styles.taskTimer, color: (extraTimer?.remaining ?? 0) <= 30 ? C.danger : C.accent }}>
-                  {formatClock(extraTimer?.remaining ?? 0)}
-                </div>
-                {((extraTimer?.remaining ?? 0) <= 0) && (
-                  <div style={{ ...styles.timeUpNote, marginTop: "0.5rem" }}>Extra Time Expired (Sound Played)</div>
-                )}
-              </div>
-
-              {/* Extra Timer Controls */}
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <button onClick={pauseExtraTimer} disabled={extraTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
-                  {extraTimer?.isRunning === false ? "Resume" : "Pause"}
-                </button>
-                <button onClick={() => adjustExtraTimer(30)} disabled={extraTimerBusy} style={{ ...styles.timerBtn, flex: 1 }}>
-                  +30s
-                </button>
-                <button onClick={stopExtraTimer} disabled={extraTimerBusy} style={{ ...styles.timerBtn, flex: 1, backgroundColor: `${C.danger}30`, borderColor: C.danger, color: C.danger }}>
-                  Stop
-                </button>
+              <div style={{
+                padding: "8px 12px", borderRadius: "6px",
+                backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
+                fontSize: "0.82rem", color: C.text,
+              }}>
+                Fallback timer is running on Live Display and managed via the <strong>Manual Timer Control</strong> panel above. Award fallback points below when a team solves.
               </div>
 
               {/* Fallback Award / Fail */}
