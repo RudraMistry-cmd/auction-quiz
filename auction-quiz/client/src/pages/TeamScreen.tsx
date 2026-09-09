@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
+import { getServerBase } from "../hooks/useSocket";
 import { tokens } from "../design-system";
 import { BrandHeader } from "../components/BrandHeader";
-import TaskTimer from "../components/TaskTimer";
 import type { Team, Auction, Bid, TaskResultEvent } from "../shared/types";
 
 const C = tokens.color;
@@ -12,196 +12,200 @@ interface TeamScreenProps {
   sessionToken?: string | null;
 }
 
-/* ─── Sub-components ─── */
+/* ─── Helpers ─── */
+function getQuestionImageUrl(imagePath?: string): string {
+  if (!imagePath) return "";
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) return imagePath;
+  if (imagePath.startsWith("/questions/")) return `${getServerBase()}${imagePath}`;
+  if (imagePath.startsWith("/")) return `${getServerBase()}${imagePath}`;
+  return `${getServerBase()}/questions/${imagePath}`;
+}
 
-function TeamHeaderBar({ teamName, connected, status }: { teamName: string; connected?: boolean; status?: "connected" | "reconnecting" | "disconnected" }) {
-  const currentStatus = status || (connected ? "connected" : "disconnected");
-  const isConnected = currentStatus === "connected";
-  const isReconnecting = currentStatus === "reconnecting";
-  const badgeColor = isConnected ? C.success : isReconnecting ? C.warning : C.danger;
-  const badgeLabel = isConnected ? "Connected" : isReconnecting ? "Reconnecting..." : "Offline";
-
+/* ─── SVG Icons ─── */
+function CoinIcon({ size = 18 }: { size?: number }) {
   return (
-    <div style={dashHeaderContainer}>
-      <div style={dashTopRow}>
-        <BrandHeader variant="compact" />
-        <div style={{
-          display: "flex", alignItems: "center", gap: "6px",
-          fontFamily: F.body, fontSize: "0.8rem", fontWeight: 600,
-          color: badgeColor,
-        }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v12M8 9.5c0-1.38 1.79-2.5 4-2.5s4 1.12 4 2.5-1.79 2.5-4 2.5-4 1.12-4 2.5 1.79 2.5 4 2.5" />
+    </svg>
+  );
+}
+
+function PointsIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={C.success} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+
+function ClockIcon({ size = 20, color = C.primary }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+/* ─── Header Timer Zone (Top Right ONLY) ─── */
+function HeaderTimerZone({
+  phase,
+  isWinner,
+  biddingTime,
+  taskTime,
+}: {
+  phase: string;
+  isWinner: boolean;
+  biddingTime: number;
+  taskTime: number;
+}) {
+  const isBidding = phase === "bidding";
+  const isTask = phase === "main_task" && isWinner;
+
+  if (isBidding) {
+    const isUrgent = biddingTime <= 10;
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "6px 16px",
+        borderRadius: tokens.radius.md,
+        backgroundColor: isUrgent ? `${C.danger}15` : `${C.primary}12`,
+        border: `2px solid ${isUrgent ? C.danger : C.primary}`,
+        boxShadow: isUrgent ? `0 0 16px ${C.danger}40` : "none",
+        animation: isUrgent ? "urgentPulse 1s infinite" : "none",
+      }}>
+        <ClockIcon size={20} color={isUrgent ? C.danger : C.primary} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
           <span style={{
-            width: "8px", height: "8px", borderRadius: "50%",
-            backgroundColor: badgeColor,
-            boxShadow: isConnected ? `0 0 6px ${C.success}` : isReconnecting ? `0 0 6px ${C.warning}` : "none",
-          }} />
-          <span>{badgeLabel}</span>
+            fontFamily: F.mono,
+            fontWeight: 900,
+            fontSize: "1.55rem",
+            color: isUrgent ? C.danger : C.primary,
+            fontVariantNumeric: "tabular-nums",
+            lineHeight: 1,
+          }}>
+            {formatClock(biddingTime)}
+          </span>
+          <span style={{
+            fontSize: "0.6rem",
+            fontWeight: 800,
+            color: isUrgent ? C.danger : C.muted,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            marginTop: "2px",
+          }}>
+            BID TIMER
+          </span>
         </div>
       </div>
-      <div style={dashTeamName}>{teamName}</div>
-    </div>
-  );
-}
+    );
+  }
 
-function DashboardCard({
-  label,
-  value,
-  color,
-  flash,
-  icon,
-  size = "normal",
-}: {
-  label: string;
-  value: number;
-  color: string;
-  flash: boolean;
-  icon: React.ReactNode;
-  size?: "normal" | "large";
-}) {
-  const isLarge = size === "large";
-  return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      backgroundColor: C.surface,
-      border: `2px solid ${flash ? color : C.border}`,
-      borderRadius: tokens.radius.xl,
-      padding: isLarge ? "32px 48px" : "24px 36px",
-      minWidth: isLarge ? "200px" : "160px",
-      boxShadow: flash ? `0 0 32px ${color}44` : tokens.shadow.md,
-      transition: `all ${tokens.transition.base}`,
-      animation: flash ? "cardFlash 0.6s ease" : "none",
-    }}>
-      <div style={{ marginBottom: "8px", color, opacity: 0.8 }}>{icon}</div>
-      <span style={{
-        fontFamily: F.body, fontWeight: 600, fontSize: "0.7rem",
-        color: C.muted, letterSpacing: "0.18em", textTransform: "uppercase",
-        marginBottom: "8px",
-      }}>{label}</span>
-      <span style={{
-        fontFamily: F.heading, fontWeight: 900,
-        fontSize: isLarge ? "clamp(3rem, 10vw, 5rem)" : "clamp(2rem, 6vw, 3.2rem)",
-        color, fontVariantNumeric: "tabular-nums", lineHeight: 1,
-      }}>{value}</span>
-    </div>
-  );
-}
-
-function StatusBanner({ status, color }: { status: string; color: string }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "center", gap: "12px",
-      padding: "16px 32px",
-      borderRadius: tokens.radius.full,
-      backgroundColor: `${color}15`,
-      border: `2px solid ${color}40`,
-      animation: "statusPulse 2s ease-in-out infinite",
-    }}>
+  if (isTask) {
+    const isUrgent = taskTime <= 30;
+    return (
       <div style={{
-        width: "12px", height: "12px", borderRadius: "50%",
-        backgroundColor: color,
-        boxShadow: `0 0 12px ${color}`,
-        animation: "dotPulse 1.5s ease-in-out infinite",
-      }} />
-      <span style={{
-        fontFamily: F.heading, fontWeight: 700,
-        fontSize: "clamp(1rem, 2.5vw, 1.3rem)",
-        color, letterSpacing: "0.05em",
-      }}>{status}</span>
-    </div>
-  );
-}
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "6px 16px",
+        borderRadius: tokens.radius.md,
+        backgroundColor: isUrgent ? `${C.danger}15` : `${C.accent}15`,
+        border: `2px solid ${isUrgent ? C.danger : C.accent}`,
+        boxShadow: isUrgent ? `0 0 16px ${C.danger}40` : "none",
+        animation: isUrgent ? "urgentPulse 1s infinite" : "none",
+      }}>
+        <ClockIcon size={20} color={isUrgent ? C.danger : C.accent} />
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+          <span style={{
+            fontFamily: F.mono,
+            fontWeight: 900,
+            fontSize: "1.55rem",
+            color: isUrgent ? C.danger : C.accent,
+            fontVariantNumeric: "tabular-nums",
+            lineHeight: 1,
+          }}>
+            {formatClock(taskTime)}
+          </span>
+          <span style={{
+            fontSize: "0.6rem",
+            fontWeight: 800,
+            color: isUrgent ? C.danger : C.accent,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            marginTop: "2px",
+          }}>
+            TASK TIMER
+          </span>
+        </div>
+      </div>
+    );
+  }
 
-function TimerDisplay({ timeLeft, isUrgent }: { timeLeft: number; isUrgent: boolean }) {
+  // Idle / Inactive Timer Zone (No connection status here!)
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: "12px",
-      padding: "12px 24px",
-      borderRadius: tokens.radius.lg,
-      backgroundColor: isUrgent ? `${C.danger}15` : C.surface,
-      border: `2px solid ${isUrgent ? C.danger : C.border}`,
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      padding: "6px 14px",
+      borderRadius: tokens.radius.md,
+      backgroundColor: `${C.border}40`,
+      border: `1px solid ${C.border}`,
+      opacity: 0.65,
     }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-        stroke={isUrgent ? C.danger : C.primary} strokeWidth="2.5" strokeLinecap="round">
-        <circle cx="12" cy="12" r="10"/>
-        <polyline points="12 6 12 12 16 14"/>
-      </svg>
+      <ClockIcon size={18} color={C.muted} />
       <span style={{
-        fontFamily: F.heading, fontWeight: 800,
-        fontSize: "clamp(1.8rem, 6vw, 2.8rem)",
-        color: isUrgent ? C.danger : C.primary,
-        fontVariantNumeric: "tabular-nums", lineHeight: 1,
+        fontFamily: F.mono,
+        fontWeight: 700,
+        fontSize: "1.1rem",
+        color: C.muted,
+        letterSpacing: "0.05em",
+        lineHeight: 1,
       }}>
-        {formatClock(timeLeft)}
+        --:--
       </span>
     </div>
   );
 }
 
-function BidButton({
-  onClick, disabled, coins, bidAmount, leading, isTeam, increment,
-}: {
-  onClick: () => void; disabled: boolean; coins: number;
-  bidAmount: number; leading: string; isTeam: string; increment: number;
-}) {
-  const isLeading = leading === isTeam;
-  const cantAfford = coins < bidAmount;
-  const isGold = increment === 50;
-  const bgColor = isLeading ? C.success : cantAfford ? C.border : isGold ? C.accent : C.primary;
-  const textColor = isLeading || cantAfford ? C.muted : isGold ? C.primary : "#FFFFFF";
-  const label = isLeading ? "YOU LEAD" : cantAfford ? "NOT ENOUGH" : `+${increment}`;
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled || isLeading || cantAfford}
-      style={{
-        flex: 1, padding: "20px 28px",
-        borderRadius: tokens.radius.lg,
-        border: isGold && !isLeading && !cantAfford ? `2px solid ${C.primary}` : "none",
-        backgroundColor: bgColor,
-        color: textColor,
-        fontFamily: F.heading, fontWeight: 900,
-        fontSize: "clamp(1.2rem, 3vw, 1.6rem)",
-        letterSpacing: "0.05em",
-        cursor: disabled || isLeading || cantAfford ? "not-allowed" : "pointer",
-        opacity: disabled || isLeading || cantAfford ? 0.4 : 1,
-        boxShadow: disabled || isLeading || cantAfford ? "none" : isGold
-          ? `0 4px 20px ${C.accent}55`
-          : `0 4px 20px ${C.primary}44`,
-        transition: `all ${tokens.transition.fast}`,
-        userSelect: "none",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
+/* ─── Feedback Toast ─── */
 function FeedbackToast({ message }: { message: { type: "success" | "error"; text: string } | null }) {
   if (!message) return null;
   const isSuccess = message.type === "success";
   return (
     <div style={{
-      position: "fixed", top: "24px", left: "50%", transform: "translateX(-50%)",
+      position: "fixed",
+      top: "92px",
+      left: "50%",
+      transform: "translateX(-50%)",
       backgroundColor: isSuccess ? C.success : C.danger,
       color: "#FFFFFF",
-      fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
-      padding: "12px 28px", borderRadius: tokens.radius.full,
+      fontFamily: F.heading,
+      fontWeight: 700,
+      fontSize: "0.95rem",
+      padding: "10px 24px",
+      borderRadius: tokens.radius.full,
       boxShadow: tokens.shadow.lg,
       animation: "toastSlide 0.3s ease",
       zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
     }}>
       {message.text}
     </div>
   );
 }
 
-/* ─── Main Screen ─── */
+/* ─── Main Team Screen Component ─── */
 export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   const {
     socket,
     connected,
-    connectionStatus,
     phase,
     currentQuestion,
     currentBid: gameBid,
@@ -209,14 +213,11 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
     winningTeam,
     biddingTimer,
     mainTaskTimer,
-    sideTaskTimer,
-    explicitTimer,
     task,
     taskTimer,
-    taskEnded,
-    taskPaused,
     activeAuction,
   } = useGamePhase();
+
   const [team, setTeam] = useState<Team | null>(null);
   const [auction, setAuction] = useState<Auction | null>(null);
   const [currentBid, setCurrentBid] = useState<number>(0);
@@ -228,44 +229,275 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
   const [points, setPoints] = useState<number>(0);
   const [coinFlash, setCoinFlash] = useState(false);
   const [pointsFlash, setPointsFlash] = useState(false);
+  const [bidFlash, setBidFlash] = useState(false);
   const [cooldown, setCooldown] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const teamRef = useRef<Team | null>(null);
   teamRef.current = team;
 
-  // Auto-sync phase states to local team screen states
+  const prevBidRef = useRef(currentBid);
+
+  // Sync gameBid and flash current bid
   useEffect(() => {
-    if (gameBid !== undefined && gameBid !== null) setCurrentBid(gameBid);
+    if (gameBid !== undefined && gameBid !== null) {
+      setCurrentBid(gameBid);
+      if (gameBid !== prevBidRef.current && gameBid > 0) {
+        setBidFlash(true);
+        const t = setTimeout(() => setBidFlash(false), 800);
+        return () => clearTimeout(t);
+      }
+      prevBidRef.current = gameBid;
+    }
   }, [gameBid]);
 
+  // Sync leading team
   useEffect(() => {
     if (phaseLeadingTeam !== undefined) setLeadingTeam(phaseLeadingTeam || "");
   }, [phaseLeadingTeam]);
 
+  // Sync active auction
   useEffect(() => {
     if (activeAuction) setAuction(activeAuction);
   }, [activeAuction]);
 
+  // Sync bidding timer
   useEffect(() => {
     if (biddingTimer && biddingTimer.remaining !== undefined) {
       setTimer(biddingTimer.remaining);
     }
   }, [biddingTimer?.remaining]);
 
-  type FormField = "teamName" | "player1" | "player2" | "phone" | "email";
+  // Reset imgError when currentQuestion changes
+  useEffect(() => {
+    setImgError(false);
+  }, [currentQuestion?.id, currentQuestion?.image]);
 
-  // Registration form
+  const flash = (setter: (v: boolean) => void) => {
+    setter(true);
+    setTimeout(() => setter(false), 1500);
+  };
+
+  // Auto-reconnect session
+  useEffect(() => {
+    if (!connected || !socket) return;
+    const token = sessionToken || localStorage.getItem("sessionToken");
+    if (token) {
+      socket.emit("client:reconnect", { sessionToken: token }, (res: any) => {
+        if (res.success && res.team) {
+          setTeam(res.team);
+          setCoins(res.team.bid_coins);
+          setPoints(res.team.reward_points);
+          if (res.currentAuction) {
+            setAuction(res.currentAuction);
+            setCurrentBid(res.currentBid || res.currentAuction.startBid);
+            setTimer(res.timer || 0);
+          }
+        }
+      });
+    }
+  }, [socket, connected, sessionToken]);
+
+  // Bid placement handler
+  const handleBid = useCallback((increment: number) => {
+    const targetAuction = activeAuction || auction;
+    const targetAuctionId = targetAuction?.auctionId;
+    if (!socket || !team || !targetAuctionId || cooldown) return;
+    if (phase !== "bidding") return;
+
+    socket.emit(
+      "client:place_bid",
+      { teamId: team.teamId, auctionId: targetAuctionId, increment },
+      (res: any) => {
+        if (!res.success) {
+          setBidMessage({ type: "error", text: res.error || "Bid failed" });
+          setTimeout(() => setBidMessage(null), 3000);
+        } else {
+          setBidMessage({ type: "success", text: `Bid placed: +${increment}` });
+          setTimeout(() => setBidMessage(null), 2000);
+        }
+      }
+    );
+
+    setCooldown(true);
+    setTimeout(() => setCooldown(false), 1000);
+  }, [socket, team, activeAuction, auction, cooldown, phase]);
+
+  // Socket event listeners for live sync
+  useEffect(() => {
+    if (!socket || !connected) return;
+
+    const handleStarted = (a: Auction) => {
+      setAuction(a);
+      setCurrentBid(a.startBid);
+      setTimer(a.duration);
+      setLeadingTeam("");
+      setBidMessage(null);
+      setAuctionCleared(false);
+      setImgError(false);
+    };
+
+    const handleCleared = () => {
+      setAuction(null);
+      setCurrentBid(0);
+      setTimer(0);
+      setLeadingTeam("");
+      setBidMessage(null);
+      setAuctionCleared(true);
+      setImgError(false);
+    };
+
+    const handleBidUpdate = (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => {
+      setCurrentBid(data.bid.amount);
+      setLeadingTeam(data.teamName);
+      setBidFlash(true);
+      setTimeout(() => setBidFlash(false), 800);
+
+      if (data.bid.teamId === teamRef.current?.teamId) {
+        setBidMessage({ type: "success", text: `Your bid: ${data.bid.amount} (+${data.increment ?? 0})` });
+      } else {
+        setBidMessage({ type: "error", text: `${data.teamName} → ${data.bid.amount}` });
+      }
+      setTimeout(() => setBidMessage(null), 3000);
+    };
+
+    const handleTimerEvent = (data: { auctionId: string; remaining: number }) => {
+      setTimer(data.remaining);
+    };
+
+    const handleEnded = (data: { auctionId?: string; winner: any; winningBid: number | null }) => {
+      setAuction((a) => (a ? { ...a, status: "completed" } : null));
+      if (data.winner) {
+        const isWinner = data.winner.teamId === teamRef.current?.teamId;
+        if (isWinner && data.winningBid) {
+          setCoins((c) => Math.max(0, c - (data.winningBid ?? 0)));
+          flash(setCoinFlash);
+        }
+        setBidMessage({
+          type: isWinner ? "success" : "error",
+          text: isWinner ? `You won the bid! (${data.winningBid})` : `${data.winner.teamName} won the bid`,
+        });
+      } else {
+        setBidMessage({ type: "error", text: "No bids received" });
+      }
+      setTimeout(() => setBidMessage(null), 4000);
+    };
+
+    const handleTaskResult = (data: TaskResultEvent) => {
+      if (data.teamId !== teamRef.current?.teamId) return;
+      setCoins(data.coins);
+      setPoints(data.rewardPoints);
+      if (data.result === "pass") {
+        flash(setPointsFlash);
+        setBidMessage({ type: "success", text: `+${data.rewardGranted} points granted!` });
+      } else {
+        setBidMessage({ type: "error", text: "Task marked as failed" });
+      }
+      setTimeout(() => setBidMessage(null), 5000);
+    };
+
+    const handleTeamUpdate = (data: { team: Team }) => {
+      if (data.team && data.team.teamId === teamRef.current?.teamId) {
+        setCoins(data.team.bid_coins);
+        setPoints(data.team.reward_points);
+        setTeam(data.team);
+      }
+    };
+
+    const handleScoreUpdate = (data?: any) => {
+      const list = data?.teams || data?.scoreboard;
+      if (list && Array.isArray(list) && teamRef.current) {
+        const found = list.find((t: any) => t.teamId === teamRef.current?.teamId);
+        if (found) {
+          setCoins(found.bid_coins);
+          setPoints(found.reward_points);
+        }
+      }
+    };
+
+    const handleFullState = (data: any) => {
+      if (data.activeAuction) setAuction(data.activeAuction);
+      if (data.currentBid !== undefined) setCurrentBid(data.currentBid);
+      if (data.leadingTeam) setLeadingTeam(data.leadingTeam);
+      if (data.timers?.bidding?.remaining !== undefined) setTimer(data.timers.bidding.remaining);
+      if (data.scoreboard && teamRef.current) {
+        const found = data.scoreboard.find((t: any) => t.teamId === teamRef.current?.teamId);
+        if (found) {
+          setCoins(found.bid_coins);
+          setPoints(found.reward_points);
+        }
+      }
+    };
+
+    socket.on("state:full" as any, handleFullState);
+    socket.on("auction:started", handleStarted);
+    socket.on("auction:start" as any, handleStarted);
+    socket.on("auction:bid_update", handleBidUpdate);
+    socket.on("bid:update" as any, handleBidUpdate);
+    socket.on("auction:timer", handleTimerEvent);
+    socket.on("auction:ended", handleEnded);
+    socket.on("bid:win" as any, handleEnded);
+    socket.on("auction:cleared", handleCleared);
+    socket.on("task:result", handleTaskResult);
+    socket.on("team:update" as any, handleTeamUpdate);
+    socket.on("scoreboard:updated", handleScoreUpdate);
+    socket.on("scoreboard:update" as any, handleScoreUpdate);
+
+    return () => {
+      socket.off("state:full" as any, handleFullState);
+      socket.off("auction:started", handleStarted);
+      socket.off("auction:start" as any, handleStarted);
+      socket.off("auction:bid_update", handleBidUpdate);
+      socket.off("bid:update" as any, handleBidUpdate);
+      socket.off("auction:timer", handleTimerEvent);
+      socket.off("auction:ended", handleEnded);
+      socket.off("bid:win" as any, handleEnded);
+      socket.off("auction:cleared", handleCleared);
+      socket.off("task:result", handleTaskResult);
+      socket.off("team:update" as any, handleTeamUpdate);
+      socket.off("scoreboard:updated", handleScoreUpdate);
+      socket.off("scoreboard:update" as any, handleScoreUpdate);
+    };
+  }, [socket, connected]);
+
+  // Keyboard arrow key shortcuts (Left Arrow -> +20, Right Arrow -> +50)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Must NOT trigger when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (phase !== "bidding") return;
+      if (!team || cooldown) return;
+      if (leadingTeam === team.teamName) return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (coins >= currentBid + 20) {
+          handleBid(20);
+        }
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (coins >= currentBid + 50) {
+          handleBid(50);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [phase, team, coins, currentBid, leadingTeam, cooldown, handleBid]);
+
+  /* ─── Registration Form State & Handlers ─── */
+  type FormField = "teamName" | "player1" | "player2" | "phone" | "email";
   const [form, setForm] = useState({ teamName: "", player1: "", player2: "", phone: "", email: "" });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [formTouched, setFormTouched] = useState<Record<string, boolean>>({});
 
-  // Validation functions
   const validateField = (name: string, value: string): string => {
     const trimmed = value.trim();
     switch (name) {
       case "teamName":
         if (trimmed.length < 3 || trimmed.length > 30) return "Team name must be 3-30 characters";
-        if (!/^[a-zA-Z0-9 ]+$/.test(trimmed)) return "Team name must be alphanumeric (letters, numbers, spaces only)";
+        if (!/^[a-zA-Z0-9 ]+$/.test(trimmed)) return "Team name must be alphanumeric";
         return "";
       case "player1":
       case "player2":
@@ -317,198 +549,15 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
     setFormErrors((prev) => ({ ...prev, [name]: validateField(name, form[name]) }));
   };
 
-  const flash = (setter: (v: boolean) => void) => {
-    setter(true);
-    setTimeout(() => setter(false), 1500);
-  };
-
-  // Auto-reconnect
-  useEffect(() => {
-    if (!connected || !socket) return;
-    const token = sessionToken || localStorage.getItem("sessionToken");
-    if (token) {
-      socket.emit("client:reconnect", { sessionToken: token }, (res: any) => {
-        if (res.success && res.team) {
-          setTeam(res.team);
-          setCoins(res.team.bid_coins);
-          setPoints(res.team.reward_points);
-          if (res.currentAuction) {
-            setAuction(res.currentAuction);
-            setCurrentBid(res.currentBid || res.currentAuction.startBid);
-            setTimer(res.timer || 0);
-          }
-        }
-      });
-    }
-  }, [socket, connected, sessionToken]);
-
-  // Bid handler
-  const handleBid = useCallback((increment: number) => {
-    if (!socket || !team || !auction || auction.status !== "active" || cooldown) return;
-
-    socket.emit("client:place_bid", { teamId: team.teamId, auctionId: auction.auctionId, increment }, (res: any) => {
-      if (!res.success) {
-        setBidMessage({ type: "error", text: res.error || "Bid failed" });
-        setTimeout(() => setBidMessage(null), 3000);
-      }
-    });
-
-    // Cooldown
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), 1500);
-  }, [socket, team, auction, cooldown]);
-
-  // Listen for auction events
-  useEffect(() => {
-    if (!socket || !connected) return;
-
-    const handleStarted = (a: Auction) => {
-      setAuction(a); setCurrentBid(a.startBid); setTimer(a.duration);
-      setLeadingTeam(""); setBidMessage(null); setAuctionCleared(false);
-    };
-    const handleCleared = () => {
-      setAuction(null); setCurrentBid(0); setTimer(0);
-      setLeadingTeam(""); setBidMessage(null); setAuctionCleared(true);
-    };
-    const handleBidUpdate = (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => {
-      setCurrentBid(data.bid.amount); setLeadingTeam(data.teamName);
-      if (data.bid.teamId === teamRef.current?.teamId) {
-        setBidMessage({ type: "success", text: `Bid ${data.bid.amount} (+${data.increment ?? 0})` });
-      } else {
-        setBidMessage({ type: "error", text: `${data.teamName} → ${data.bid.amount}` });
-      }
-      setTimeout(() => setBidMessage(null), 3000);
-    };
-    const handleTimer = (data: { auctionId: string; remaining: number }) => { setTimer(data.remaining); };
-    const handleEnded = (data: { auctionId?: string; winner: any; winningBid: number | null }) => {
-      setAuction((a) => (a ? { ...a, status: "completed" } : null));
-      if (data.winner) {
-        const isWinner = data.winner.teamId === teamRef.current?.teamId;
-        if (isWinner && data.winningBid) {
-          setCoins((c) => Math.max(0, c - (data.winningBid ?? 0)));
-          flash(setCoinFlash);
-        }
-        setBidMessage({
-          type: isWinner ? "success" : "error",
-          text: isWinner ? `You won! ${data.winningBid}` : `${data.winner.teamName} won`,
-        });
-      } else {
-        setBidMessage({ type: "error", text: "No bids" });
-      }
-    };
-    const handleTaskResult = (data: TaskResultEvent) => {
-      if (data.teamId !== teamRef.current?.teamId) return;
-      setCoins(data.coins); setPoints(data.rewardPoints);
-      if (data.result === "pass") {
-        flash(setPointsFlash);
-        setBidMessage({ type: "success", text: `+${data.rewardGranted} points` });
-      } else {
-        setBidMessage({ type: "error", text: "Task failed" });
-      }
-      setTimeout(() => setBidMessage(null), 5000);
-    };
-
-    const handleTeamUpdate = (data: { team: Team }) => {
-      if (data.team && data.team.teamId === teamRef.current?.teamId) {
-        setCoins(data.team.bid_coins);
-        setPoints(data.team.reward_points);
-        setTeam(data.team);
-      }
-    };
-
-    const handleScoreUpdate = (data?: any) => {
-      const list = data?.teams || data?.scoreboard;
-      if (list && Array.isArray(list) && teamRef.current) {
-        const found = list.find((t: any) => t.teamId === teamRef.current?.teamId);
-        if (found) {
-          setCoins(found.bid_coins);
-          setPoints(found.reward_points);
-        }
-      }
-    };
-
-    const handleFullState = (data: any) => {
-      if (data.activeAuction) setAuction(data.activeAuction);
-      if (data.currentBid !== undefined) setCurrentBid(data.currentBid);
-      if (data.leadingTeam) setLeadingTeam(data.leadingTeam);
-      if (data.timers?.bidding?.remaining !== undefined) setTimer(data.timers.bidding.remaining);
-      if (data.scoreboard && teamRef.current) {
-        const found = data.scoreboard.find((t: any) => t.teamId === teamRef.current?.teamId);
-        if (found) {
-          setCoins(found.bid_coins);
-          setPoints(found.reward_points);
-        }
-      }
-    };
-
-    socket.on("state:full" as any, handleFullState);
-    socket.on("auction:started", handleStarted);
-    socket.on("auction:start" as any, handleStarted);
-    socket.on("auction:bid_update", handleBidUpdate);
-    socket.on("bid:update" as any, handleBidUpdate);
-    socket.on("auction:timer", handleTimer);
-    socket.on("auction:ended", handleEnded);
-    socket.on("bid:win" as any, handleEnded);
-    socket.on("auction:cleared", handleCleared);
-    socket.on("task:result", handleTaskResult);
-    socket.on("team:update" as any, handleTeamUpdate);
-    socket.on("scoreboard:updated", handleScoreUpdate);
-    socket.on("scoreboard:update" as any, handleScoreUpdate);
-
-    const handleThemeChanged = (data: { theme: string }) => {
-      document.documentElement.setAttribute("data-theme", data.theme);
-      localStorage.setItem("theme", data.theme);
-    };
-    socket.on("theme:changed", handleThemeChanged);
-
-    return () => {
-      socket.off("state:full" as any, handleFullState);
-      socket.off("auction:started", handleStarted);
-      socket.off("auction:start" as any, handleStarted);
-      socket.off("auction:bid_update", handleBidUpdate);
-      socket.off("bid:update" as any, handleBidUpdate);
-      socket.off("auction:timer", handleTimer);
-      socket.off("auction:ended", handleEnded);
-      socket.off("bid:win" as any, handleEnded);
-      socket.off("auction:cleared", handleCleared);
-      socket.off("task:result", handleTaskResult);
-      socket.off("team:update" as any, handleTeamUpdate);
-      socket.off("scoreboard:updated", handleScoreUpdate);
-      socket.off("scoreboard:update" as any, handleScoreUpdate);
-      socket.off("theme:changed", handleThemeChanged);
-    };
-  }, [socket, connected]);
-
-  // Arrow keys to bid (left = +20, right = +50)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!team || auction?.status !== "active" || timer <= 0) return;
-      
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        handleBid(20);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        handleBid(50);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [team, auction, timer, handleBid]);
-
-  // Register
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!socket) return;
-
-    // Validate all fields
     if (!validateForm()) {
       setBidMessage({ type: "error", text: "Please fix the errors below" });
       setTimeout(() => setBidMessage(null), 3000);
       return;
     }
 
-    // Trim all inputs before sending
     const trimmedForm = {
       teamName: form.teamName.trim(),
       player1: form.player1.trim(),
@@ -519,7 +568,9 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
 
     socket.emit("client:register", trimmedForm, (res: any) => {
       if (res.success && res.team && res.sessionToken) {
-        setTeam(res.team); setCoins(res.team.bid_coins); setPoints(res.team.reward_points);
+        setTeam(res.team);
+        setCoins(res.team.bid_coins);
+        setPoints(res.team.reward_points);
         localStorage.setItem("sessionToken", res.sessionToken);
         localStorage.setItem("teamId", res.team.teamId);
       } else {
@@ -529,20 +580,16 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
     });
   };
 
-  /* ── Registration Form ── */
+  /* ─── Registration View (When not logged in) ─── */
   if (!team) {
     return (
       <div style={regRoot}>
         <style>{dashboardStyles}</style>
-
-        {/* Header */}
         <header style={regHeader}>
           <BrandHeader variant="compact" inverted />
         </header>
 
-        {/* Main Content */}
         <div style={regContent}>
-          {/* Left Side - Branding */}
           <div style={regLeft}>
             <BrandHeader variant="centered" inverted style={{ marginBottom: "20px" }} />
             <p style={{ fontFamily: F.body, fontSize: "clamp(0.95rem, 1.5vw, 1.15rem)", color: "#94A3B8", lineHeight: 1.7, maxWidth: "400px", marginBottom: "32px" }}>
@@ -551,27 +598,24 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
               and climb the leaderboard.
             </p>
 
-            {/* Rule Hints */}
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "32px" }}>
               {[
-                "Each team starts with coins",
+                "Each team starts with 1000 coins",
                 "Bid to win coding challenges",
                 "Solve within time to earn rewards",
                 "Highest reward points wins",
               ].map((rule, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: C.accent, flexShrink: 0 }} />
-                    <span style={{ fontFamily: F.body, fontSize: "0.9rem", color: "#CBD5E1" }}>{rule}</span>
-                  </div>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: C.accent, flexShrink: 0 }} />
+                  <span style={{ fontFamily: F.body, fontSize: "0.9rem", color: "#CBD5E1" }}>{rule}</span>
+                </div>
               ))}
             </div>
-
             <p style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#64748B", fontStyle: "italic" }}>
               Stay sharp. Every bid counts.
             </p>
           </div>
 
-          {/* Right Side - Form */}
           <div style={regRight}>
             <div style={regFormCard}>
               <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "1.5rem", color: C.primary, textAlign: "center", marginBottom: "24px" }}>
@@ -592,7 +636,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
                     <input
                       style={{
                         ...regInput,
-                        borderColor: formErrors[field.key] && formTouched[field.key] ? C.danger : regInput.borderColor,
+                        borderColor: formErrors[field.key] && formTouched[field.key] ? C.danger : C.border,
                       }}
                       type={field.type || "text"}
                       placeholder={field.placeholder}
@@ -602,10 +646,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
                       required
                     />
                     {formErrors[field.key] && formTouched[field.key] && (
-                      <div style={{
-                        fontFamily: F.body, fontSize: "0.7rem", color: C.danger,
-                        marginTop: "4px", fontWeight: 500,
-                      }}>
+                      <div style={{ fontFamily: F.body, fontSize: "0.7rem", color: C.danger, marginTop: "4px", fontWeight: 500 }}>
                         {formErrors[field.key]}
                       </div>
                     )}
@@ -627,469 +668,872 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
           </div>
         </div>
 
-        {/* Footer Sections */}
-        <div style={regFooter}>
-          <div style={regFooterContent}>
-            {/* About */}
-            <div style={regFooterSection}>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: C.accent, marginBottom: "12px", letterSpacing: "0.05em" }}>About</div>
-              <p style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#94A3B8", lineHeight: 1.6 }}>
-                Bid for C is a competitive coding auction event where teams bid coins to solve challenges.
-              </p>
-            </div>
-
-            {/* How it works */}
-            <div style={regFooterSection}>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: C.accent, marginBottom: "12px", letterSpacing: "0.05em" }}>How it works</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {["Bid to win a problem", "Solve within given time", "Admin verifies result", "Earn reward points"].map((step, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "0.75rem", color: C.accent }}>{i + 1}.</span>
-                    <span style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#94A3B8" }}>{step}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Winning Criteria */}
-            <div style={regFooterSection}>
-              <div style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1rem", color: C.accent, marginBottom: "12px", letterSpacing: "0.05em" }}>Winning Criteria</div>
-              <p style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#94A3B8", lineHeight: 1.6 }}>
-                Team with highest reward points wins. Ties resolved by remaining coins.
-              </p>
-            </div>
-          </div>
-        </div>
-
         <FeedbackToast message={bidMessage} />
       </div>
     );
   }
 
-  const isActive = auction?.status === "active" && timer > 0;
-
-  /* ── Main Task Phase ── */
-  if ((phase === "main_task" || (phase as any) === "task") && (task || winningTeam)) {
-    const winnerId = winningTeam?.teamId || task?.teamId;
-    const winnerName = winningTeam?.teamName || task?.teamName || "Winning Team";
-    const isWinner = winnerId === team.teamId;
-    const displayTimer = (mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0;
-    const activeExplicit = explicitTimer || sideTaskTimer;
-    const isFailed = task?.result === "fail";
-
-    return (
-      <div style={dashRoot}>
-        <style>{dashboardStyles}</style>
-        <FeedbackToast message={bidMessage} />
-
-        {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} connected={connected} status={connectionStatus} />
-
-        {/* Stat Cards */}
-        <div style={dashStatRow}>
-          <DashboardCard
-            label="COINS" value={coins} color={C.accent} flash={coinFlash}
-            icon={<CoinIcon />} size="large"
-          />
-          <DashboardCard
-            label="POINTS" value={points} color={C.success} flash={pointsFlash}
-            icon={<PointsIcon />} size="large"
-          />
-        </div>
-
-        {/* Status */}
-        <StatusBanner
-          status={
-            isFailed
-              ? (isWinner ? "TASK FAILED — WAITING FOR RESOLUTION" : "PRIMARY SOLVER FAILED")
-              : (isWinner ? "YOUR TASK — SOLVE NOW" : `${winnerName} is solving`)
-          }
-          color={isFailed ? C.danger : isWinner ? C.accent : C.muted}
-        />
-
-        {/* Task Timer */}
-        {!isFailed && (
-          <div style={{ marginTop: "24px" }}>
-            {task ? (
-              <TaskTimer task={task} timeLimit={task.time_limit} endAt={task.endAt} timeLeft={displayTimer} ended={taskEnded} paused={taskPaused} size="medium" />
-            ) : (
-              <TimerDisplay timeLeft={displayTimer} isUrgent={displayTimer <= 30} />
-            )}
-          </div>
-        )}
-
-        {/* Secondary Explicit Timer ("Open Challenge") if active */}
-        {activeExplicit && activeExplicit.remaining > 0 && (
-          <div style={{
-            marginTop: "20px", padding: "16px 24px", borderRadius: tokens.radius.lg,
-            backgroundColor: `${C.accent}15`, border: `2px solid ${C.accent}`,
-            textAlign: "center",
-          }}>
-            <div style={{
-              fontFamily: F.heading, fontWeight: 700, fontSize: "0.95rem",
-              color: C.accent, marginBottom: "8px", textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}>
-              Open Challenge Active
-            </div>
-            <div style={{
-              fontFamily: F.mono, fontWeight: 800, fontSize: "2.5rem",
-              color: activeExplicit.remaining <= 10 ? C.danger : C.accent,
-            }}>
-              {formatClock(activeExplicit.remaining)}
-            </div>
-            <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
-              {isWinner ? "Open challenge running for other teams" : "Solve offline now — report solution to Admin!"}
-            </span>
-          </div>
-        )}
-
-        <div style={{ fontFamily: F.body, fontSize: "0.9rem", color: C.muted, marginTop: "16px", textAlign: "center" }}>
-          Reward: {currentQuestion?.reward ?? task?.defaultReward ?? 100} pts
-        </div>
-      </div>
-    );
-  }
-
-  /* ── Ended Phase ── */
-  if (phase === "ended") {
-    return (
-      <div style={dashRoot}>
-        <style>{dashboardStyles}</style>
-        <FeedbackToast message={bidMessage} />
-
-        {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} connected={connected} />
-
-        {/* Stat Cards */}
-        <div style={dashStatRow}>
-          <DashboardCard
-            label="COINS" value={coins} color={C.accent} flash={coinFlash}
-            icon={<CoinIcon />} size="large"
-          />
-          <DashboardCard
-            label="POINTS" value={points} color={C.success} flash={pointsFlash}
-            icon={<PointsIcon />} size="large"
-          />
-        </div>
-
-        {/* Status */}
-        <StatusBanner
-          status="ROUND COMPLETED — WAITING FOR NEXT AUCTION"
-          color={C.info}
-        />
-      </div>
-    );
-  }
-
-  /* ── Waiting State ── */
-  if (!auction) {
-    return (
-      <div style={dashRoot}>
-        <style>{dashboardStyles}</style>
-        <FeedbackToast message={bidMessage} />
-
-        {/* Team Header */}
-        <TeamHeaderBar teamName={team.teamName} connected={connected} status={connectionStatus} />
-
-        {/* Stat Cards */}
-        <div style={dashStatRow}>
-          <DashboardCard
-            label="COINS" value={coins} color={C.accent} flash={coinFlash}
-            icon={<CoinIcon />} size="large"
-          />
-          <DashboardCard
-            label="POINTS" value={points} color={C.success} flash={pointsFlash}
-            icon={<PointsIcon />} size="large"
-          />
-        </div>
-
-        {/* Status */}
-        <StatusBanner
-          status={auctionCleared ? "NEXT AUCTION SOON" : "WAITING FOR AUCTION"}
-          color={C.info}
-        />
-
-        {/* Connection */}
-        <div style={{
-          marginTop: "24px",
-          fontFamily: F.body, fontSize: "0.85rem",
-          color: connectionStatus === "connected" ? C.success : connectionStatus === "reconnecting" ? C.warning : C.danger,
-          display: "flex", alignItems: "center", gap: "8px",
-        }}>
-          <div style={{
-            width: "8px", height: "8px", borderRadius: "50%",
-            backgroundColor: connectionStatus === "connected" ? C.success : connectionStatus === "reconnecting" ? C.warning : C.danger,
-          }} />
-          {connectionStatus === "connected" ? "Connected" : connectionStatus === "reconnecting" ? "Reconnecting..." : "Offline"}
-        </div>
-      </div>
-    );
-  }
-
-  /* ── Active Auction ── */
+  /* ─── Derived Dashboard State ─── */
   const isLeading = leadingTeam === team.teamName;
+  const winnerId = winningTeam?.teamId || task?.teamId;
+  const isWinner = !!(winnerId && team && winnerId === team.teamId);
+  const winnerName = winningTeam?.teamName || task?.teamName || "Winning Team";
+
+  // Active question image resolution
+  const activeImage = currentQuestion?.image || (task as any)?.image || (activeAuction as any)?.image;
+
+  // Strict Question Visibility Rules:
+  // 1. Never in idle or ended states (even if admin picked question)
+  // 2. Visible to all teams during "bidding"
+  // 3. Visible ONLY to the winning team during "main_task"
+  const showQuestion = (phase === "bidding" || (phase === "main_task" && isWinner)) && !!activeImage && !imgError;
+
+  // Timers
+  const activeBiddingTime = biddingTimer ? biddingTimer.remaining : timer;
+  const activeTaskTime = (mainTaskTimer ? mainTaskTimer.remaining : taskTimer) ?? 0;
+
+  // Bid Button validation
+  const bid20Disabled = phase !== "bidding" || isLeading || coins < currentBid + 20 || cooldown;
+  const bid50Disabled = phase !== "bidding" || isLeading || coins < currentBid + 50 || cooldown;
+
+  // Status Message & Color
+  let statusMessage = "WAITING FOR AUCTION";
+  let statusColor: string = C.muted;
+
+  if (phase === "bidding") {
+    statusMessage = isLeading ? "YOU ARE LEADING" : "AUCTION LIVE";
+    statusColor = isLeading ? C.success : C.primary;
+  } else if (phase === "main_task") {
+    statusMessage = isWinner ? "SOLVE THE TASK!" : `${winnerName} is solving`;
+    statusColor = isWinner ? C.accent : C.warning;
+  } else if (phase === "ended") {
+    statusMessage = "ROUND COMPLETED";
+    statusColor = C.info;
+  } else if (auctionCleared) {
+    statusMessage = "NEXT AUCTION SOON";
+    statusColor = C.muted;
+  }
+
+  // Inactive Placeholder Content for Left Panel (Item F)
+  let placeholderTitle = "Auction Standby";
+  let placeholderDesc = "Questions will appear when the quiz master starts bidding.";
+
+  if (phase === "main_task") {
+    if (isWinner) {
+      placeholderTitle = "You Won the Auction!";
+      placeholderDesc = "Solve the question shown and alert the admin when finished.";
+    } else {
+      placeholderTitle = "Task in Progress";
+      placeholderDesc = `${winnerName} is attempting to solve the task. Stand by!`;
+    }
+  } else if (phase === "ended") {
+    placeholderTitle = "Round Concluded";
+    placeholderDesc = "Points are recorded. Prepare for the next round.";
+  }
+
   return (
     <div style={dashRoot}>
       <style>{dashboardStyles}</style>
+
+      {/* ─── 1. TOP HEADER ROW (~80px FIXED HEIGHT) ─── */}
+      <header style={dashHeader}>
+        {/* Left: Team Info Badge */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
+          <div style={headerTeamBadge}>
+            <span style={headerTeamLabel}>TEAM</span>
+            <span style={headerTeamValue}>{team.teamName}</span>
+          </div>
+        </div>
+
+        {/* Center: Event Logo + Event Name */}
+        <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
+          <BrandHeader variant="compact" style={{ marginBottom: 0 }} />
+        </div>
+
+        {/* Right: Dynamic Timer Zone ONLY (NO connection status here!) */}
+        <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+          <HeaderTimerZone
+            phase={phase}
+            isWinner={isWinner}
+            biddingTime={activeBiddingTime}
+            taskTime={activeTaskTime}
+          />
+        </div>
+      </header>
+
+      {/* ─── 2. MAIN SCREEN SPLIT (30% LEFT / 70% RIGHT) ─── */}
+      <div style={dashSplit}>
+
+        {/* ─── LEFT PANEL (30%) — TEAM CONTROL ZONE ─── */}
+        <aside style={leftPanel}>
+          {/* A. Team Name (Large, Bold, Left Aligned) */}
+          <div style={teamNameSection}>
+            <span style={teamSubLabel}>Logged in Team</span>
+            <h1 style={teamHeading} title={team.teamName}>
+              {team.teamName}
+            </h1>
+          </div>
+
+          {/* B. Stats Row (Horizontal Side-by-Side: Coins + Points) */}
+          <div style={statsRow}>
+            {/* Coins Card */}
+            <div style={statCard(coinFlash, C.accent)}>
+              <div style={statHeader}>
+                <CoinIcon size={16} />
+                <span style={statLabel}>COINS</span>
+              </div>
+              <span style={{ ...statValue, color: C.accent }}>{coins}</span>
+            </div>
+
+            {/* Points Card */}
+            <div style={statCard(pointsFlash, C.success)}>
+              <div style={statHeader}>
+                <PointsIcon size={16} />
+                <span style={statLabel}>POINTS</span>
+              </div>
+              <span style={{ ...statValue, color: C.success }}>{points}</span>
+            </div>
+          </div>
+
+          {/* C. Current Bid Display (NEW - MANDATORY) */}
+          {phase === "bidding" ? (
+            <div style={bidCardActive(bidFlash, isLeading)}>
+              <span style={bidCardLabel}>CURRENT BID</span>
+              <div style={{ ...bidCardNumber, color: isLeading ? C.success : C.primary }}>
+                {currentBid}
+              </div>
+              <div style={{ ...bidCardFooter, color: isLeading ? C.success : leadingTeam ? C.accent : C.muted }}>
+                {isLeading ? "★ Your team is leading!" : leadingTeam ? `Leader: ${leadingTeam}` : "Starting bid"}
+              </div>
+            </div>
+          ) : (
+            <div style={bidCardInactive}>
+              <span style={bidCardLabel}>CURRENT BID</span>
+              <div style={{ ...bidCardNumber, color: C.muted, opacity: 0.35 }}>
+                --
+              </div>
+              <div style={{ ...bidCardFooter, color: C.muted, opacity: 0.7 }}>
+                Inactive outside bidding
+              </div>
+            </div>
+          )}
+
+          {/* D. Auction Status Text (Subtle Animated Indicator) */}
+          <div style={statusBanner(statusColor)}>
+            <div style={{ ...statusDot, backgroundColor: statusColor, boxShadow: `0 0 10px ${statusColor}` }} />
+            <span style={{ ...statusText, color: statusColor }}>
+              {statusMessage}
+            </span>
+          </div>
+
+          {/* E / F. Bid Controls (When Bidding) OR Clean Inactive Placeholder */}
+          {phase === "bidding" ? (
+            <div style={bidControlsContainer}>
+              <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+                <button
+                  type="button"
+                  className="bid-btn"
+                  onClick={() => handleBid(20)}
+                  disabled={bid20Disabled}
+                  style={bidButtonStyle(20, bid20Disabled, isLeading)}
+                >
+                  <span style={{ fontSize: "1.2rem", fontWeight: 900, lineHeight: 1 }}>+20</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, opacity: 0.85 }}>
+                    {isLeading ? "LEAD" : coins < currentBid + 20 ? "NO COINS" : `Next: ${currentBid + 20}`}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="bid-btn"
+                  onClick={() => handleBid(50)}
+                  disabled={bid50Disabled}
+                  style={bidButtonStyle(50, bid50Disabled, isLeading)}
+                >
+                  <span style={{ fontSize: "1.2rem", fontWeight: 900, lineHeight: 1 }}>+50</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, opacity: 0.85 }}>
+                    {isLeading ? "LEAD" : coins < currentBid + 50 ? "NO COINS" : `Next: ${currentBid + 50}`}
+                  </span>
+                </button>
+              </div>
+
+              <div style={shortcutHint}>
+                Press <strong>←</strong> for +20 &nbsp;·&nbsp; Press <strong>→</strong> for +50
+              </div>
+            </div>
+          ) : (
+            <div style={inactivePlaceholderCard}>
+              <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>
+                {phase === "main_task" ? (isWinner ? "⚡" : "⏳") : phase === "ended" ? "🏁" : "🎯"}
+              </div>
+              <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "0.95rem", color: C.primary, marginBottom: "4px" }}>
+                {placeholderTitle}
+              </div>
+              <div style={{ fontFamily: F.body, fontSize: "0.8rem", color: C.muted, lineHeight: 1.45 }}>
+                {placeholderDesc}
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* ─── RIGHT PANEL (70%) — QUESTION DISPLAY ZONE ─── */}
+        <main style={rightPanel}>
+          {showQuestion ? (
+            /* Question is visible ONLY during bidding OR for winning team during main_task */
+            <div style={questionCard}>
+              {/* Question Metadata Header */}
+              <div style={questionHeader}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={questionBadge}>
+                    {phase === "main_task" ? "YOUR ACTIVE TASK" : "AUCTION QUESTION"}
+                  </span>
+                  {currentQuestion?.id && (
+                    <span style={{ fontFamily: F.mono, fontSize: "0.8rem", color: C.muted, fontWeight: 600 }}>
+                      ID: {currentQuestion.id}
+                    </span>
+                  )}
+                </div>
+                {currentQuestion && (
+                  <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+                    <span style={{ fontFamily: F.heading, fontSize: "0.85rem", fontWeight: 800, color: C.success }}>
+                      +{currentQuestion.reward} Pts
+                    </span>
+                    <span style={{ fontFamily: F.heading, fontSize: "0.85rem", fontWeight: 800, color: C.accent }}>
+                      {currentQuestion.time}s Limit
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Scaled Question Image (Guaranteed No Scroll) */}
+              <div style={questionImageWrapper}>
+                <img
+                  src={getQuestionImageUrl(activeImage)}
+                  alt="Challenge Question"
+                  onError={() => setImgError(true)}
+                  style={questionImg}
+                />
+              </div>
+            </div>
+          ) : phase === "main_task" && !isWinner ? (
+            /* Non-winning teams during main_task */
+            <div style={waitingSolveCard}>
+              <div style={waitingSolveIconBox}>
+                <ClockIcon size={44} color={C.accent} />
+              </div>
+              <h2 style={waitingSolveTitle}>
+                {winnerName} is Solving
+              </h2>
+              <p style={waitingSolveText}>
+                The winning team has claimed this challenge and is working on the solution.
+                Stand by for the next auction round!
+              </p>
+            </div>
+          ) : (
+            /* Default / Idle / Ended Placeholder (Never reveals question prematurely) */
+            <div style={idlePlaceholderContainer}>
+              <BrandHeader variant="centered" style={{ marginBottom: "16px" }} />
+              <div style={taglinePill}>
+                <span>THE ULTIMATE TECHNICAL AUCTION</span>
+              </div>
+              <p style={idlePlaceholderText}>
+                {phase === "ended"
+                  ? "Round has finished. Scores are updating. The next challenge will begin shortly."
+                  : "Challenge will be revealed to all teams once bidding begins. Keep your coins ready!"}
+              </p>
+            </div>
+          )}
+        </main>
+      </div>
+
       <FeedbackToast message={bidMessage} />
-
-      {/* Team Header */}
-      <TeamHeaderBar teamName={team.teamName} connected={connected} status={connectionStatus} />
-
-      {/* Timer */}
-      <div style={{ marginBottom: "24px" }}>
-        <TimerDisplay timeLeft={timer} isUrgent={timer <= 10} />
-      </div>
-
-      {/* Current Bid Hero */}
-      <div style={{
-        backgroundColor: C.surface, border: `2px solid ${C.border}`,
-        borderRadius: tokens.radius.xl, padding: "24px 48px",
-        marginBottom: "8px", textAlign: "center",
-        boxShadow: tokens.shadow.md,
-      }}>
-        <div style={{
-          fontFamily: F.body, fontWeight: 600, fontSize: "0.7rem",
-          color: C.muted, letterSpacing: "0.2em", textTransform: "uppercase",
-          marginBottom: "4px",
-        }}>CURRENT BID</div>
-        <div style={{
-          fontFamily: F.heading, fontWeight: 900,
-          fontSize: "clamp(3.5rem, 14vw, 6rem)",
-          color: C.primary, fontVariantNumeric: "tabular-nums", lineHeight: 1,
-        }}>{currentBid}</div>
-      </div>
-
-      {/* Next Bids */}
-      <div style={{ display: "flex", gap: "12px", marginBottom: "24px" }}>
-        <div style={{
-          fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
-          color: C.primary, backgroundColor: C.surface,
-          border: `2px solid ${C.border}`, borderRadius: tokens.radius.md,
-          padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px",
-        }}>
-          <span style={{ color: C.muted, fontFamily: F.body, fontSize: "0.85rem" }}>+20 →</span>
-          <span style={{ color: C.accent }}>{currentBid + 20}</span>
-        </div>
-        <div style={{
-          fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
-          color: C.primary, backgroundColor: C.accent,
-          border: `2px solid ${C.primary}`, borderRadius: tokens.radius.md,
-          padding: "10px 20px", display: "flex", alignItems: "center", gap: "8px",
-          boxShadow: `0 2px 12px ${C.accent}44`,
-        }}>
-          <span style={{ color: C.primary, fontFamily: F.body, fontSize: "0.85rem" }}>+50 →</span>
-          <span style={{ color: C.primary }}>{currentBid + 50}</span>
-        </div>
-      </div>
-
-      {/* Stat Cards */}
-      <div style={dashStatRow}>
-        <DashboardCard
-          label="COINS" value={coins} color={C.accent} flash={coinFlash}
-          icon={<CoinIcon />}
-        />
-        <DashboardCard
-          label="POINTS" value={points} color={C.success} flash={pointsFlash}
-          icon={<PointsIcon />}
-        />
-      </div>
-
-      {/* Status Banner */}
-      <div style={{ marginTop: "20px" }}>
-        <StatusBanner
-          status={isLeading ? "YOU ARE LEADING" : "BIDDING ACTIVE"}
-          color={isLeading ? C.success : C.info}
-        />
-      </div>
-
-      {/* Bid Buttons */}
-      {isActive && (
-        <div style={{ width: "100%", maxWidth: "420px", marginTop: "24px" }}>
-          <div style={{ display: "flex", gap: "16px" }}>
-            <BidButton
-              onClick={() => handleBid(20)}
-              disabled={!isActive}
-              coins={coins}
-              bidAmount={currentBid + 20}
-              leading={leadingTeam}
-              isTeam={team.teamName}
-              increment={20}
-            />
-            <BidButton
-              onClick={() => handleBid(50)}
-              disabled={!isActive}
-              coins={coins}
-              bidAmount={currentBid + 50}
-              leading={leadingTeam}
-              isTeam={team.teamName}
-              increment={50}
-            />
-          </div>
-          <div style={{
-            marginTop: "12px",
-            fontFamily: F.body, fontSize: "0.75rem",
-            color: C.muted, textAlign: "center",
-          }}>
-            Press ← for +20  |  Press → for +50
-          </div>
-        </div>
-      )}
-
-      {/* Ended */}
-      {!isActive && auction.status === "completed" && (
-        <div style={{
-          marginTop: "20px", padding: "16px 32px",
-          borderRadius: tokens.radius.lg,
-          backgroundColor: C.surface, border: `2px solid ${C.border}`,
-          fontFamily: F.heading, fontWeight: 700, fontSize: "1.2rem",
-          color: C.muted, textAlign: "center",
-        }}>
-          Auction Ended
-        </div>
-      )}
     </div>
   );
 }
 
-/* ─── Layout ─── */
+/* ─── Styles: Strict 100vh Non-Scrollable Layout ─── */
 const dashRoot: React.CSSProperties = {
-  minHeight: "100vh", display: "flex", flexDirection: "column",
-  alignItems: "center", justifyContent: "center",
-  backgroundColor: C.bg, color: C.text,
-  fontFamily: F.body, userSelect: "none",
-  padding: "clamp(24px, 4vw, 48px)",
-  gap: "20px",
+  height: "100vh",
+  maxHeight: "100vh",
+  width: "100vw",
+  maxWidth: "100vw",
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+  backgroundColor: C.bg,
+  color: C.text,
+  fontFamily: F.body,
+  userSelect: "none",
+  boxSizing: "border-box",
 };
 
-const dashHeaderContainer: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center",
-  width: "100%", maxWidth: "500px", marginBottom: "16px",
+const dashHeader: React.CSSProperties = {
+  height: "80px",
+  minHeight: "80px",
+  maxHeight: "80px",
+  width: "100%",
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "0 28px",
+  backgroundColor: C.surface,
+  borderBottom: `1px solid ${C.border}`,
+  flexShrink: 0,
+  zIndex: 10,
 };
 
-const dashTopRow: React.CSSProperties = {
-  display: "flex", alignItems: "center", justifyContent: "space-between",
-  width: "100%", marginBottom: "12px",
+const headerTeamBadge: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "8px",
+  padding: "6px 14px",
+  borderRadius: tokens.radius.full,
+  backgroundColor: `${C.primary}12`,
+  border: `1px solid ${C.primary}30`,
 };
 
-const dashTeamName: React.CSSProperties = {
-  fontFamily: F.heading, fontWeight: 900,
-  fontSize: "clamp(1.75rem, 5vw, 2.75rem)",
-  color: C.primary, letterSpacing: "0.03em",
-  lineHeight: 1.1, textAlign: "center",
+const headerTeamLabel: React.CSSProperties = {
+  fontSize: "0.7rem",
+  fontWeight: 800,
+  color: C.muted,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
 };
 
-const dashStatRow: React.CSSProperties = {
-  display: "flex", gap: "20px", justifyContent: "center",
+const headerTeamValue: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontSize: "0.95rem",
+  fontWeight: 800,
+  color: C.primary,
+  maxWidth: "180px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
-/* ─── SVG Icons ─── */
-function CoinIcon() {
-  return (
-    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round">
-      <circle cx="12" cy="12" r="10"/>
-      <path d="M12 6v12M8 9.5c0-1.38 1.79-2.5 4-2.5s4 1.12 4 2.5-1.79 2.5-4 2.5-4 1.12-4 2.5 1.79 2.5 4 2.5"/>
-    </svg>
-  );
+const dashSplit: React.CSSProperties = {
+  flex: 1,
+  display: "flex",
+  width: "100%",
+  height: "calc(100vh - 80px)",
+  maxHeight: "calc(100vh - 80px)",
+  overflow: "hidden",
+  boxSizing: "border-box",
+};
+
+/* ─── Left Panel (30%) ─── */
+const leftPanel: React.CSSProperties = {
+  flex: "0 0 30%",
+  width: "30%",
+  maxWidth: "30%",
+  height: "100%",
+  maxHeight: "100%",
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+  padding: "20px 24px",
+  boxSizing: "border-box",
+  backgroundColor: C.surface,
+  borderRight: `1px solid ${C.border}`,
+  gap: "14px",
+  justifyContent: "flex-start",
+};
+
+const teamNameSection: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "2px",
+  flexShrink: 0,
+};
+
+const teamSubLabel: React.CSSProperties = {
+  fontSize: "0.7rem",
+  fontWeight: 700,
+  color: C.muted,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+};
+
+const teamHeading: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontSize: "clamp(1.35rem, 2vw, 1.8rem)",
+  fontWeight: 900,
+  color: C.primary,
+  margin: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  letterSpacing: "0.02em",
+  lineHeight: 1.15,
+};
+
+const statsRow: React.CSSProperties = {
+  display: "flex",
+  gap: "12px",
+  width: "100%",
+  flexShrink: 0,
+};
+
+const statCard = (flash: boolean, color: string): React.CSSProperties => ({
+  flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  backgroundColor: C.bg,
+  border: `2px solid ${flash ? color : C.border}`,
+  borderRadius: tokens.radius.lg,
+  boxShadow: flash ? `0 0 16px ${color}44` : tokens.shadow.xs,
+  transition: "all 0.25s ease",
+  animation: flash ? "cardFlash 0.6s ease" : "none",
+});
+
+const statHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "6px",
+  marginBottom: "4px",
+};
+
+const statLabel: React.CSSProperties = {
+  fontSize: "0.68rem",
+  fontWeight: 800,
+  color: C.muted,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+};
+
+const statValue: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontWeight: 900,
+  fontSize: "clamp(1.4rem, 2.2vw, 2rem)",
+  fontVariantNumeric: "tabular-nums",
+  lineHeight: 1,
+};
+
+/* ─── Current Bid Cards ─── */
+const bidCardActive = (flash: boolean, isLeading: boolean): React.CSSProperties => ({
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "14px 18px",
+  backgroundColor: C.bg,
+  borderRadius: tokens.radius.xl,
+  border: `2px solid ${flash ? C.accent : isLeading ? C.success : C.primary}`,
+  boxShadow: flash ? `0 0 24px ${C.accent}60` : `0 4px 16px ${C.primary}15`,
+  animation: flash ? "bidPulse 0.4s ease" : "none",
+  transition: "all 0.25s ease",
+  flexShrink: 0,
+});
+
+const bidCardInactive: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "12px 18px",
+  backgroundColor: `${C.bg}80`,
+  borderRadius: tokens.radius.xl,
+  border: `1.5px dashed ${C.border}`,
+  opacity: 0.7,
+  flexShrink: 0,
+};
+
+const bidCardLabel: React.CSSProperties = {
+  fontSize: "0.72rem",
+  fontWeight: 800,
+  color: C.muted,
+  letterSpacing: "0.18em",
+  textTransform: "uppercase",
+  marginBottom: "4px",
+};
+
+const bidCardNumber: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontWeight: 900,
+  fontSize: "clamp(2.2rem, 3.8vw, 3.2rem)",
+  fontVariantNumeric: "tabular-nums",
+  lineHeight: 1,
+};
+
+const bidCardFooter: React.CSSProperties = {
+  marginTop: "4px",
+  fontSize: "0.72rem",
+  fontWeight: 700,
+  letterSpacing: "0.03em",
+};
+
+/* ─── Auction Status Banner ─── */
+const statusBanner = (color: string): React.CSSProperties => ({
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  padding: "9px 16px",
+  borderRadius: tokens.radius.full,
+  backgroundColor: `${color}12`,
+  border: `1.5px solid ${color}40`,
+  flexShrink: 0,
+});
+
+const statusDot: React.CSSProperties = {
+  width: "10px",
+  height: "10px",
+  borderRadius: "50%",
+  flexShrink: 0,
+  animation: "dotPulse 1.6s ease-in-out infinite",
+};
+
+const statusText: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontWeight: 800,
+  fontSize: "0.82rem",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+/* ─── Bid Controls ─── */
+const bidControlsContainer: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  width: "100%",
+  flexShrink: 0,
+};
+
+function bidButtonStyle(
+  increment: number,
+  disabled: boolean,
+  isLeading: boolean
+): React.CSSProperties {
+  const isGold = increment === 50;
+  const bgColor = isLeading
+    ? `${C.success}20`
+    : disabled
+    ? `${C.border}60`
+    : isGold
+    ? C.accent
+    : C.primary;
+  const textColor = isLeading
+    ? C.success
+    : disabled
+    ? C.muted
+    : isGold
+    ? "#0F172A"
+    : "#FFFFFF";
+  const borderColor = isLeading
+    ? C.success
+    : disabled
+    ? C.border
+    : isGold
+    ? C.accent
+    : C.primary;
+
+  return {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "3px",
+    padding: "12px 14px",
+    borderRadius: tokens.radius.lg,
+    border: `2px solid ${borderColor}`,
+    backgroundColor: bgColor,
+    color: textColor,
+    fontFamily: F.heading,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled && !isLeading ? 0.45 : 1,
+    boxShadow: disabled
+      ? "none"
+      : isGold
+      ? `0 4px 16px ${C.accent}40`
+      : `0 4px 16px ${C.primary}30`,
+    transition: `all ${tokens.transition.fast}`,
+    userSelect: "none",
+  };
 }
 
-function PointsIcon() {
-  return (
-    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={C.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-    </svg>
-  );
-}
+const shortcutHint: React.CSSProperties = {
+  fontFamily: F.body,
+  fontSize: "0.72rem",
+  color: C.muted,
+  textAlign: "center",
+  marginTop: "2px",
+};
 
-/* ─── Dashboard CSS Animations ─── */
+/* ─── Inactive Placeholder Card ─── */
+const inactivePlaceholderCard: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "14px 16px",
+  backgroundColor: C.bg,
+  borderRadius: tokens.radius.lg,
+  border: `1px solid ${C.border}`,
+  textAlign: "center",
+  flexShrink: 0,
+};
+
+/* ─── Right Panel (70%) ─── */
+const rightPanel: React.CSSProperties = {
+  flex: "0 0 70%",
+  width: "70%",
+  maxWidth: "70%",
+  height: "100%",
+  maxHeight: "100%",
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "20px",
+  boxSizing: "border-box",
+  backgroundColor: C.bg,
+};
+
+const questionCard: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  maxHeight: "100%",
+  display: "flex",
+  flexDirection: "column",
+  backgroundColor: C.surface,
+  border: `1px solid ${C.border}`,
+  borderRadius: tokens.radius.xl,
+  padding: "16px 20px",
+  boxSizing: "border-box",
+  boxShadow: tokens.shadow.lg,
+  overflow: "hidden",
+};
+
+const questionHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  marginBottom: "12px",
+  flexShrink: 0,
+};
+
+const questionBadge: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontSize: "0.78rem",
+  fontWeight: 800,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  color: C.primary,
+  backgroundColor: `${C.primary}12`,
+  padding: "4px 10px",
+  borderRadius: tokens.radius.sm,
+  border: `1px solid ${C.primary}25`,
+};
+
+const questionImageWrapper: React.CSSProperties = {
+  flex: 1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  overflow: "hidden",
+  width: "100%",
+  minHeight: 0,
+  backgroundColor: "rgba(0,0,0,0.03)",
+  borderRadius: tokens.radius.lg,
+  padding: "8px",
+  boxSizing: "border-box",
+};
+
+const questionImg: React.CSSProperties = {
+  maxWidth: "100%",
+  maxHeight: "100%",
+  width: "auto",
+  height: "auto",
+  objectFit: "contain",
+  borderRadius: tokens.radius.md,
+  boxShadow: "0 6px 24px rgba(0,0,0,0.18)",
+};
+
+const waitingSolveCard: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "40px",
+  textAlign: "center",
+  maxWidth: "520px",
+};
+
+const waitingSolveIconBox: React.CSSProperties = {
+  width: "80px",
+  height: "80px",
+  borderRadius: "50%",
+  backgroundColor: `${C.accent}15`,
+  border: `2px solid ${C.accent}40`,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  marginBottom: "20px",
+};
+
+const waitingSolveTitle: React.CSSProperties = {
+  fontFamily: F.heading,
+  fontSize: "1.6rem",
+  fontWeight: 900,
+  color: C.primary,
+  marginBottom: "12px",
+};
+
+const waitingSolveText: React.CSSProperties = {
+  fontFamily: F.body,
+  fontSize: "1rem",
+  color: C.muted,
+  lineHeight: 1.6,
+  margin: 0,
+};
+
+const idlePlaceholderContainer: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "40px",
+  textAlign: "center",
+  maxWidth: "520px",
+};
+
+const taglinePill: React.CSSProperties = {
+  display: "inline-block",
+  padding: "6px 16px",
+  borderRadius: tokens.radius.full,
+  backgroundColor: `${C.primary}10`,
+  border: `1px solid ${C.primary}25`,
+  marginBottom: "16px",
+  fontSize: "0.8rem",
+  fontWeight: 800,
+  color: C.primary,
+  letterSpacing: "0.1em",
+};
+
+const idlePlaceholderText: React.CSSProperties = {
+  fontFamily: F.body,
+  fontSize: "1.05rem",
+  color: C.muted,
+  lineHeight: 1.65,
+  margin: 0,
+};
+
+/* ─── Dashboard Keyframes ─── */
 const dashboardStyles = `
   @keyframes toastSlide {
-    from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+    from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
     to { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
   @keyframes cardFlash {
-    0% { box-shadow: 0 0 0 0 rgba(212,175,55,0.4); }
-    50% { box-shadow: 0 0 32px 8px rgba(212,175,55,0.25); }
+    0% { box-shadow: 0 0 0 0 rgba(212,175,55,0.6); }
+    50% { box-shadow: 0 0 24px 6px rgba(212,175,55,0.3); }
     100% { box-shadow: 0 0 0 0 rgba(212,175,55,0); }
   }
-  @keyframes statusPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.85; }
+  @keyframes bidPulse {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.03); }
+    100% { transform: scale(1); }
   }
   @keyframes dotPulse {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.3); opacity: 0.7; }
   }
-  @keyframes regFadeIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+  @keyframes urgentPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+  .bid-btn:active:not(:disabled) {
+    transform: scale(0.96);
   }
 `;
 
-/* ─── Registration Page ─── */
+/* ─── Registration Styles ─── */
 const regRoot: React.CSSProperties = {
-  minHeight: "100vh", display: "flex", flexDirection: "column",
-  backgroundColor: C.primary, color: "#FFFFFF",
-  fontFamily: F.body, userSelect: "none",
-  animation: "regFadeIn 0.6s ease-out",
+  minHeight: "100vh",
+  display: "flex",
+  flexDirection: "column",
+  backgroundColor: C.primary,
+  color: "#FFFFFF",
+  fontFamily: F.body,
+  userSelect: "none",
 };
 
 const regHeader: React.CSSProperties = {
-  display: "flex", alignItems: "center", justifyContent: "center",
-  gap: "10px", padding: "20px 0",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "10px",
+  padding: "20px 0",
   borderBottom: "1px solid rgba(255,255,255,0.1)",
 };
 
 const regContent: React.CSSProperties = {
-  flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-  gap: "clamp(32px, 5vw, 80px)", padding: "clamp(24px, 4vw, 64px)",
+  flex: 1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "clamp(32px, 5vw, 80px)",
+  padding: "clamp(24px, 4vw, 64px)",
   flexWrap: "wrap",
 };
 
 const regLeft: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center",
-  maxWidth: "450px", textAlign: "center",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  maxWidth: "450px",
+  textAlign: "center",
 };
 
 const regRight: React.CSSProperties = {
-  display: "flex", alignItems: "center", justifyContent: "center",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 const regFormCard: React.CSSProperties = {
-  backgroundColor: "#FFFFFF", borderRadius: "16px",
+  backgroundColor: "#FFFFFF",
+  borderRadius: "16px",
   padding: "clamp(24px, 3vw, 36px)",
-  width: "100%", maxWidth: "400px",
+  width: "100%",
+  maxWidth: "400px",
   boxShadow: "0 20px 40px rgba(0,0,0,0.3)",
 };
 
 const regInput: React.CSSProperties = {
-  fontFamily: F.body, fontSize: "0.95rem",
-  padding: "12px 16px", borderRadius: "8px",
-  border: `2px solid ${C.border}`, backgroundColor: C.bg,
-  color: C.text, outline: "none", width: "100%",
+  fontFamily: F.body,
+  fontSize: "0.95rem",
+  padding: "12px 16px",
+  borderRadius: "8px",
+  border: `2px solid ${C.border}`,
+  backgroundColor: C.bg,
+  color: C.text,
+  outline: "none",
+  width: "100%",
   transition: "border-color 0.2s ease",
-  boxSizing: "border-box" as const,
+  boxSizing: "border-box",
 };
 
 const regBtn: React.CSSProperties = {
-  fontFamily: F.heading, fontWeight: 700, fontSize: "1rem",
-  padding: "14px 24px", borderRadius: "8px",
-  border: "none", backgroundColor: C.accent, color: C.primary,
-  cursor: "pointer", width: "100%",
-  marginTop: "8px", transition: "all 0.2s ease",
-};
-
-const regFooter: React.CSSProperties = {
-  borderTop: "1px solid rgba(255,255,255,0.1)",
-  padding: "clamp(24px, 4vw, 48px)",
-};
-
-const regFooterContent: React.CSSProperties = {
-  display: "flex", justifyContent: "center", gap: "clamp(32px, 5vw, 80px)",
-  flexWrap: "wrap", maxWidth: "1200px", margin: "0 auto",
-};
-
-const regFooterSection: React.CSSProperties = {
-  maxWidth: "300px",
+  fontFamily: F.heading,
+  fontWeight: 700,
+  fontSize: "1rem",
+  padding: "14px 24px",
+  borderRadius: "8px",
+  border: "none",
+  backgroundColor: C.accent,
+  color: C.primary,
+  cursor: "pointer",
+  width: "100%",
+  marginTop: "8px",
+  transition: "all 0.2s ease",
 };
