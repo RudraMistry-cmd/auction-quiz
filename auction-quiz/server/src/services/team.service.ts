@@ -277,6 +277,29 @@ export class TeamService {
       ORDER BY t.reward_points DESC, t.bid_coins DESC
     `);
   }
+
+  async deleteTeam(teamId: string): Promise<{ success: boolean; error?: string }> {
+    const db = await getDb();
+    const existing = await this.getTeam(teamId);
+    if (!existing) {
+      return { success: false, error: "Team not found" };
+    }
+
+    // Clean up dependent records safely
+    run(db, "UPDATE auctions SET winnerId = NULL WHERE winnerId = ?", [teamId]);
+    run(db, "DELETE FROM bids WHERE teamId = ?", [teamId]);
+
+    const tasks = queryAll(db, "SELECT taskId FROM tasks WHERE teamId = ?", [teamId]);
+    for (const t of tasks) {
+      run(db, "DELETE FROM task_results WHERE taskId = ?", [t.taskId]);
+    }
+    run(db, "DELETE FROM tasks WHERE teamId = ?", [teamId]);
+    run(db, "DELETE FROM sessions WHERE teamId = ?", [teamId]);
+    run(db, "DELETE FROM teams WHERE teamId = ?", [teamId]);
+    persistDb();
+
+    return { success: true };
+  }
 }
 
 export const teamService = new TeamService();

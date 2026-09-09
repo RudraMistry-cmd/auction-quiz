@@ -191,6 +191,29 @@ async function main() {
     }
   });
 
+  // DELETE /admin/team/:id - Delete team completely from database
+  const deleteTeamHandler = async (req: express.Request, res: express.Response) => {
+    try {
+      const { id } = req.params;
+      const result = await teamService.deleteTeam(id);
+      if (!result.success) {
+        res.status(404).json({ success: false, error: result.error });
+        return;
+      }
+
+      // Sync scoreboard with all connected clients
+      const scoreboard = await teamService.getScoreboard();
+      io.emit("scoreboard:updated", { teams: scoreboard });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  };
+
+  app.delete("/admin/team/:id", adminHttpAuth, deleteTeamHandler);
+  app.delete("/admin/teams/:id", adminHttpAuth, deleteTeamHandler);
+
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`\n========================================`);
     console.log(`  Auction Quiz Server`);

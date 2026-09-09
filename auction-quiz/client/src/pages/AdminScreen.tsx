@@ -112,6 +112,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [dataEdits, setDataEdits] = useState<Record<string, any>>({});
   const [dataBusy, setDataBusy] = useState(false);
   const [dataConfirm, setDataConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ teamId: string; teamName: string } | null>(null);
   const [dataToast, setDataToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [failArmed, setFailArmed] = useState(false);
@@ -484,6 +485,44 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       setDataToast({ type: "error", text: err.message || "Failed to update team" });
       setTimeout(() => setDataToast(null), 4000);
       setDataConfirm(null);
+    } finally {
+      setDataBusy(false);
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    setDataBusy(true);
+    try {
+      const res = await fetch(`${getServerBase()}/admin/team/${teamId}`, {
+        method: "DELETE",
+        headers: {
+          "x-admin-secret": secret,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to delete team");
+      }
+
+      setAllTeams((prev) => prev.filter((t) => t.teamId !== teamId));
+      setDataEdits((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+
+      const deletedName = deleteConfirm?.teamName || "Team";
+      setDeleteConfirm(null);
+      setDataToast({ type: "success", text: `Deleted ${deletedName} successfully!` });
+      setTimeout(() => setDataToast(null), 3000);
+
+      fetchScoreboard();
+    } catch (err: any) {
+      console.error("[Data] Delete error:", err);
+      setDataToast({ type: "error", text: err.message || "Failed to delete team" });
+      setTimeout(() => setDataToast(null), 4000);
+      setDeleteConfirm(null);
     } finally {
       setDataBusy(false);
     }
@@ -949,7 +988,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                         <th style={tableHeaderStyle}>Phone</th>
                         <th style={tableHeaderStyle}>Coins</th>
                         <th style={tableHeaderStyle}>Points</th>
-                        <th style={{ ...tableHeaderStyle, textAlign: "center" }}>Action</th>
+                        <th style={{ ...tableHeaderStyle, textAlign: "center" }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -999,22 +1038,42 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                               />
                             </td>
                             <td style={{ ...tableCellStyle, textAlign: "center" }}>
-                              <button
-                                onClick={() => setDataConfirm({ teamId: team.teamId, teamName: team.teamName })}
-                                disabled={!edit || dataBusy}
-                                style={{
-                                  padding: "5px 14px", borderRadius: "4px",
-                                  border: "none",
-                                  backgroundColor: edit ? C.success : C.border,
-                                  color: edit ? "#fff" : C.muted,
-                                  cursor: (!edit || dataBusy) ? "not-allowed" : "pointer",
-                                  fontWeight: 600, fontSize: "0.75rem",
-                                  opacity: (!edit || dataBusy) ? 0.4 : 1,
-                                  transition: "all 0.15s ease",
-                                }}
-                              >
-                                Save
-                              </button>
+                              <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                                <button
+                                  onClick={() => setDataConfirm({ teamId: team.teamId, teamName: team.teamName })}
+                                  disabled={!edit || dataBusy}
+                                  style={{
+                                    padding: "5px 12px", borderRadius: "4px",
+                                    border: "none",
+                                    backgroundColor: edit ? C.success : C.border,
+                                    color: edit ? "#fff" : C.muted,
+                                    cursor: (!edit || dataBusy) ? "not-allowed" : "pointer",
+                                    fontWeight: 600, fontSize: "0.75rem",
+                                    opacity: (!edit || dataBusy) ? 0.4 : 1,
+                                    transition: "all 0.15s ease",
+                                  }}
+                                  title={edit ? "Save changes to team" : "Edit a field to save"}
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirm({ teamId: team.teamId, teamName: team.teamName })}
+                                  disabled={dataBusy}
+                                  style={{
+                                    padding: "5px 10px", borderRadius: "4px",
+                                    border: "none",
+                                    backgroundColor: C.danger,
+                                    color: "#fff",
+                                    cursor: dataBusy ? "not-allowed" : "pointer",
+                                    fontWeight: 600, fontSize: "0.75rem",
+                                    opacity: dataBusy ? 0.4 : 1,
+                                    transition: "all 0.15s ease",
+                                  }}
+                                  title="Delete team from database"
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1436,6 +1495,37 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
               </button>
               <button
                 onClick={() => setDataConfirm(null)}
+                disabled={dataBusy}
+                style={styles.modalCancelBtn}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Team confirmation modal */}
+      {deleteConfirm && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={{ ...styles.modalTitle, color: C.danger }}>Delete Team</h3>
+            <p style={styles.modalText}>
+              Are you sure you want to permanently delete <strong>{deleteConfirm.teamName}</strong> from the database?
+            </p>
+            <p style={{ color: C.danger, fontSize: "0.85rem", marginTop: "-8px", marginBottom: "20px", lineHeight: "1.4" }}>
+              ⚠️ This will remove their registration, session, and bid history. This action cannot be undone.
+            </p>
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => handleDeleteTeam(deleteConfirm.teamId)}
+                disabled={dataBusy}
+                style={{ ...styles.modalConfirmBtn, backgroundColor: C.danger }}
+              >
+                {dataBusy ? "Deleting…" : "Yes, Delete"}
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(null)}
                 disabled={dataBusy}
                 style={styles.modalCancelBtn}
               >
