@@ -8,6 +8,7 @@
     "install:all": "npm install && npm install --prefix server && npm install --prefix client"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "puppeteer-core": "^25.10.0"
   }
 }

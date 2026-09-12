@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getServerBase } from "../hooks/useSocket";
 import { useGamePhase, formatClock } from "../hooks/useGamePhase";
 import { BrandHeader } from "../components/BrandHeader";
@@ -8,6 +8,31 @@ import type { Auction, Bid } from "../shared/types";
 
 const C = tokens.color;
 const F = tokens.font;
+
+/* ─── Question Bank category order + display labels ─── */
+const CATEGORY_ORDER = [
+  "super_easy",
+  "easy",
+  "medium",
+  "hard",
+  "bonus",
+  "jackpot",
+  "code_fix",
+  "code_completion",
+];
+const CATEGORY_LABELS: Record<string, string> = {
+  super_easy: "Super Easy",
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+  bonus: "Bonus",
+  jackpot: "Jackpot",
+  code_fix: "Code Fix / Debugging",
+  code_completion: "Code Completion",
+};
+function categoryLabel(slug: string): string {
+  return CATEGORY_LABELS[slug] || slug.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 /* ─── Reusable Card ─── */
 function Card({ title, children, span, scroll }: { title: string; children: React.ReactNode; span?: number; scroll?: boolean }) {
@@ -116,6 +141,23 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
   // Manifest & Fallback state
   const [manifest, setManifest] = useState<any[]>([]);
+  const [qbCategory, setQbCategory] = useState<string>("");
+
+  const qbCategories = useMemo(() => {
+    const present = new Set(manifest.map((q) => q.category).filter(Boolean));
+    const ordered = CATEGORY_ORDER.filter((c) => present.has(c));
+    const extra = [...present].filter((c) => !CATEGORY_ORDER.includes(c)).sort();
+    return [...ordered, ...extra] as string[];
+  }, [manifest]);
+
+  useEffect(() => {
+    if (!qbCategory && qbCategories.length > 0) setQbCategory(qbCategories[0]);
+  }, [qbCategory, qbCategories]);
+
+  const qbFiltered = useMemo(
+    () => manifest.filter((q) => (q.category ? q.category === qbCategory : !qbCategory)),
+    [manifest, qbCategory]
+  );
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [fallbackTeamId, setFallbackTeamId] = useState<string>("");
   const [fallbackBusy, setFallbackBusy] = useState(false);
@@ -1075,54 +1117,92 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           {manifest.length === 0 ? (
             <div style={styles.empty}>No questions in manifest.json</div>
           ) : (
-            <div style={styles.imageGrid}>
-              {manifest.map((q) => {
-                const isSelected = selectedQuestionId === q.id || phaseQuestion?.id === q.id;
-                return (
-                  <div
-                    key={q.id}
-                    onClick={() => selectQuestion(q.id)}
-                    style={{
-                      ...styles.imageGridItem,
-                      borderColor: isSelected ? C.success : q.used ? `${C.accent}88` : C.border,
-                      backgroundColor: isSelected ? `${C.success}15` : q.used ? `${C.accent}08` : C.bg,
-                      cursor: "pointer",
-                      display: "flex", flexDirection: "column", alignItems: "center",
-                      padding: "8px", position: "relative",
-                    }}
-                  >
-                    <img
-                      src={`${getServerBase()}/questions/${q.image}`}
-                      alt={q.id}
-                      style={{ ...styles.imageGridThumb, maxHeight: "80px", objectFit: "contain" }}
-                      loading="lazy"
-                    />
-                    <div style={{ fontWeight: 800, fontSize: "0.9rem", color: C.text, marginTop: "6px" }}>
-                      {q.id.toUpperCase()}
-                    </div>
-                    <div style={{ fontSize: "0.75rem", color: C.accent, fontWeight: 700 }}>
-                      {q.reward} pts · {q.time}s
-                    </div>
-                    {isSelected && (
-                      <div style={{
-                        fontSize: "0.65rem", fontWeight: 800, color: "#fff",
-                        background: "linear-gradient(180deg, #4ADE80, #22C55E)", padding: "2px 8px", borderRadius: "999px", marginTop: "4px",
-                      }}>
-                        SELECTED
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px", flexWrap: "wrap" }}>
+                <select
+                  value={qbCategory}
+                  onChange={(e) => setQbCategory(e.target.value)}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "0.625rem",
+                    border: `1px solid ${C.border}`,
+                    backgroundColor: C.surface,
+                    color: C.text,
+                    fontFamily: F.body,
+                    fontSize: "0.85rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  {qbCategories.map((c) => {
+                    const count = manifest.filter((q) => q.category === c).length;
+                    return (
+                      <option key={c} value={c}>
+                        {categoryLabel(c)} ({count})
+                      </option>
+                    );
+                  })}
+                  {manifest.some((q) => !q.category) && (
+                    <option value="">Uncategorized ({manifest.filter((q) => !q.category).length})</option>
+                  )}
+                </select>
+                <span style={{ fontSize: "0.75rem", color: C.muted }}>
+                  {qbFiltered.length} question{qbFiltered.length === 1 ? "" : "s"} in this category
+                </span>
+              </div>
+
+              {qbFiltered.length === 0 ? (
+                <div style={styles.empty}>No questions in this category</div>
+              ) : (
+                <div style={styles.imageGrid}>
+                  {qbFiltered.map((q) => {
+                    const isSelected = selectedQuestionId === q.id || phaseQuestion?.id === q.id;
+                    return (
+                      <div
+                        key={q.id}
+                        onClick={() => selectQuestion(q.id)}
+                        style={{
+                          ...styles.imageGridItem,
+                          borderColor: isSelected ? C.success : q.used ? `${C.accent}88` : C.border,
+                          backgroundColor: isSelected ? `${C.success}15` : q.used ? `${C.accent}08` : C.bg,
+                          cursor: "pointer",
+                          display: "flex", flexDirection: "column", alignItems: "center",
+                          padding: "8px", position: "relative",
+                        }}
+                      >
+                        <img
+                          src={`${getServerBase()}/questions/${q.image}`}
+                          alt={q.id}
+                          style={{ ...styles.imageGridThumb, maxHeight: "80px", objectFit: "contain" }}
+                          loading="lazy"
+                        />
+                        <div style={{ fontWeight: 800, fontSize: "0.85rem", color: C.text, marginTop: "6px", textAlign: "center" }}>
+                          {q.title || q.id.toUpperCase()}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: C.accent, fontWeight: 700 }}>
+                          {q.reward} pts · {q.time}s
+                        </div>
+                        {isSelected && (
+                          <div style={{
+                            fontSize: "0.65rem", fontWeight: 800, color: "#fff",
+                            background: "linear-gradient(180deg, #4ADE80, #22C55E)", padding: "2px 8px", borderRadius: "999px", marginTop: "4px",
+                          }}>
+                            SELECTED
+                          </div>
+                        )}
+                        {q.used && !isSelected && (
+                          <div style={{
+                            fontSize: "0.65rem", fontWeight: 700, color: C.accent,
+                            backgroundColor: `${C.accent}20`, padding: "2px 6px", borderRadius: "999px", marginTop: "4px",
+                          }}>
+                            USED
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {q.used && !isSelected && (
-                      <div style={{
-                        fontSize: "0.65rem", fontWeight: 700, color: C.accent,
-                        backgroundColor: `${C.accent}20`, padding: "2px 6px", borderRadius: "999px", marginTop: "4px",
-                      }}>
-                        USED
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </Card>
 

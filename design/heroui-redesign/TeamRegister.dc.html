@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap">
+<style>
+  :root{
+    --navy:#0B3C5D; --navy-light:#1A5276; --navy-dark:#082C44;
+    --gold:#D4AF37; --gold-light:#E5C34B; --gold-dark:#B8962E;
+    --bg:#F8FAFC; --surface:#FFFFFF; --border:#E2E8F0;
+    --text:#0F172A; --text-secondary:#334155; --text-muted:#64748B;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Inter',system-ui,sans-serif; color:var(--text);}
+  a{color:var(--gold-light);} a:hover{color:var(--gold);}
+  .field input{width:100%; height:44px; border-radius:12px; border:1.5px solid var(--border); padding:0 14px; font-size:14px; font-family:'Inter',sans-serif; color:var(--text); outline:none; transition:border-color .15s ease, box-shadow .15s ease;}
+  .field input::placeholder{color:#94A3B8;}
+  .field input:focus{border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,175,55,0.18);}
+  .field-focused input{border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,175,55,0.18);}
+  .cta-btn{transition:transform .12s ease, box-shadow .12s ease;}
+  .cta-btn:hover{transform:translateY(-1px); box-shadow:0 10px 20px rgba(212,175,55,0.28);}
+</style>
+</helmet>
+
+<div style="width:1440px; height:900px; display:flex; overflow:hidden;">
+
+  <div style="width:46%; height:100%; background:linear-gradient(165deg, var(--navy) 0%, var(--navy-dark) 100%); color:#F8FAFC; padding:72px 64px; display:flex; flex-direction:column; justify-content:center; gap:28px; position:relative;">
+
+    <div style="position:absolute; top:-120px; right:-120px; width:360px; height:360px; border-radius:999px; background:radial-gradient(circle, rgba(212,175,55,0.14), transparent 70%);"></div>
+
+    <div style="display:flex; align-items:baseline; gap:2px; font-family:'Poppins',sans-serif; position:relative; z-index:1;">
+      <span style="font-size:40px; font-weight:700; color:#F8FAFC;">BID FOR&nbsp;</span>
+      <span style="font-size:48px; font-weight:800; color:var(--gold-light);">C</span>
+    </div>
+
+    <div style="font-size:16px; line-height:1.7; font-style:italic; color:rgba(248,250,252,0.85); max-width:420px; position:relative; z-index:1;">
+      Compete in a fast-paced coding auction — bid for the right to solve a live programming challenge, then race the clock to fix it.
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:14px; margin-top:8px; position:relative; z-index:1;">
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="width:7px; height:7px; margin-top:7px; border-radius:999px; background:var(--gold); flex-shrink:0;"></span><span style="font-size:14px; color:rgba(248,250,252,0.88);">Every team starts with an equal coin balance — bid wisely.</span></div>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="width:7px; height:7px; margin-top:7px; border-radius:999px; background:var(--gold); flex-shrink:0;"></span><span style="font-size:14px; color:rgba(248,250,252,0.88);">Highest bidder wins the right to solve the active question.</span></div>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="width:7px; height:7px; margin-top:7px; border-radius:999px; background:var(--gold); flex-shrink:0;"></span><span style="font-size:14px; color:rgba(248,250,252,0.88);">A failed solve opens a fallback round for the rest of the floor.</span></div>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="width:7px; height:7px; margin-top:7px; border-radius:999px; background:var(--gold); flex-shrink:0;"></span><span style="font-size:14px; color:rgba(248,250,252,0.88);">Points and coins both count toward the final leaderboard.</span></div>
+    </div>
+
+    <div style="font-size:14px; font-style:italic; color:rgba(212,175,55,0.9); margin-top:12px; position:relative; z-index:1;">Stay sharp. Every bid counts.</div>
+  </div>
+
+  <div style="width:54%; height:100%; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:48px;">
+    <div style="width:460px; background:var(--surface); border-radius:22px; border:1px solid var(--border); box-shadow:0 12px 32px rgba(15,23,42,0.08); padding:40px;">
+
+      <div style="font-size:22px; font-weight:700; color:var(--text); margin-bottom:6px;">Team Registration</div>
+      <div style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">Two players per team. One device per team.</div>
+
+      <div style="display:flex; align-items:center; gap:10px; padding:11px 14px; border-radius:12px; background:rgba(212,175,55,0.12); border:1px solid rgba(212,175,55,0.35); margin-bottom:24px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold-dark)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
+        <span style="font-size:12.5px; color:var(--gold-dark); font-weight:600; line-height:1.4;">Your team name is assigned automatically from the event pool.</span>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div class="field" style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary);">Player 1 Name</label>
+          <input type="text" placeholder="e.g. Arjun Mehta" value="Arjun Mehta">
+        </div>
+        <div class="field field-focused" style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary);">Player 2 Name</label>
+          <input type="text" placeholder="e.g. Sara Iyer" value="Sara Iyer">
+        </div>
+        <div class="field" style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary);">Email</label>
+          <input type="email" placeholder="team@example.com" value="arjun.mehta@example.com">
+        </div>
+        <div class="field" style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary);">Contact Number</label>
+          <input type="tel" placeholder="10-digit mobile number" value="9876543210">
+        </div>
+      </div>
+
+      <button class="cta-btn" style="width:100%; margin-top:26px; height:48px; border-radius:14px; border:none; background:linear-gradient(180deg, var(--gold-light), var(--gold)); color:var(--navy-dark); font-size:15px; font-weight:700; letter-spacing:0.02em; cursor:pointer; box-shadow:0 4px 12px rgba(212,175,55,0.35);">Enter Auction</button>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

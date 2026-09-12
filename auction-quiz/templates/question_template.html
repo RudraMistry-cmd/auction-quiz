@@ -14,133 +14,77 @@
     }
 
     body {
-      background: #0B0F1A;
-      color: #FFFFFF;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: #FFFFFF;
+      color: #0F172A;
+      padding: 52px 60px;
     }
 
-    /* HEADER */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 20px 40px;
-      border-bottom: 2px solid rgba(255,255,255,0.1);
-    }
-
-    .badge {
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 18px;
-    }
-
-    .easy { background: #22C55E; }
-    .medium { background: #F59E0B; }
-    .hard { background: #EF4444; }
-
-    .title {
-      font-size: 28px;
+    .question-title {
+      font-size: 46px;
       font-weight: 700;
-      letter-spacing: 1px;
-    }
-
-    .timer {
-      font-size: 24px;
-      font-weight: 600;
-      color: #22D3EE;
-    }
-
-    /* MAIN BOX */
-    .container {
-      flex: 1;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 30px;
-    }
-
-    .question-box {
-      width: 90%;
-      max-width: 1400px;
-      background: #111827;
-      border-radius: 16px;
-      padding: 40px;
-      box-shadow: 0 0 40px rgba(59,130,246,0.2);
-      overflow-y: auto;
+      color: #0B3C5D;
+      line-height: 1.25;
+      margin-bottom: 26px;
     }
 
     .question-content {
       font-size: 32px;
-      line-height: 1.5;
+      line-height: 1.6;
+      color: #0F172A;
       white-space: pre-wrap;
     }
 
-    /* CODE BLOCK STYLE */
-    pre {
-      background: #020617;
-      padding: 20px;
+    /* EXAMPLE BOX */
+    .example-box {
+      font-size: 26px;
+      background: rgba(11,60,93,0.05);
+      border-left: 5px solid #0B3C5D;
       border-radius: 10px;
-      margin-top: 20px;
-      font-size: 20px;
+      padding: 20px 26px;
+      margin-top: 24px;
+    }
+
+    .example-box .ex-label {
+      color: #0B3C5D;
+      font-weight: 700;
+    }
+
+    .example-box div + div {
+      margin-top: 10px;
+    }
+
+    /* NOTE */
+    .note {
+      font-size: 24px;
+      color: #B8962E;
+      font-style: italic;
+      margin-top: 22px;
+    }
+
+    /* CODE BLOCK */
+    pre {
+      background: #F1F5F9;
+      border: 1px solid #E2E8F0;
+      border-radius: 14px;
+      padding: 26px 30px;
+      margin-top: 26px;
+      font-size: 24px;
       overflow-x: auto;
     }
 
-    /* FOOTER */
-    .footer {
-      display: flex;
-      justify-content: space-between;
-      padding: 20px 40px;
-      border-top: 2px solid rgba(255,255,255,0.1);
-      font-size: 20px;
-      color: #94A3B8;
+    pre code {
+      font-family: "Consolas", "Cascadia Code", "Fira Code", monospace;
+      color: #0F172A;
+      line-height: 1.6;
+      white-space: pre;
     }
-
-    .reward {
-      color: #3B82F6;
-      font-weight: 600;
-    }
-
   </style>
 </head>
 
 <body>
 
-  <!-- HEADER -->
-  <div class="header">
-    <div class="badge {{DIFFICULTY_CLASS}}">
-      {{DIFFICULTY}}
-    </div>
-
-    <div class="title">
-      AUCTION ROUND
-    </div>
-
-    <div class="timer">
-      {{TIME_LIMIT}}
-    </div>
-  </div>
-
-  <!-- MAIN QUESTION -->
-  <div class="container">
-    <div class="question-box">
-      <div class="question-content">
-        {{QUESTION_CONTENT}}
-      </div>
-    </div>
-  </div>
-
-  <!-- FOOTER -->
-  <div class="footer">
-    <div class="reward">
-      Reward: {{REWARD_POINTS}}
-    </div>
-
-    <div>
-      Solve within given time
-    </div>
+  <div class="question-content">
+    {{QUESTION_CONTENT}}
   </div>
 
 </body>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+  :root{
+    --navy:#0B3C5D; --navy-light:#1A5276; --navy-dark:#082C44;
+    --gold:#D4AF37; --gold-light:#E5C34B; --gold-dark:#B8962E;
+    --bg:#F8FAFC; --surface:#FFFFFF; --border:#E2E8F0;
+    --text:#0F172A; --text-secondary:#334155; --text-muted:#64748B;
+    --success:#22C55E; --danger:#EF4444;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Inter',system-ui,sans-serif; color:var(--text);}
+  .mono{font-family:'JetBrains Mono',monospace;}
+</style>
+</helmet>
+
+<div style="width:1440px; height:900px; display:flex; flex-direction:column; overflow:hidden; background:var(--bg);">
+
+  <div style="height:80px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--surface); border-bottom:1px solid var(--border);">
+    <div style="display:flex; align-items:baseline; gap:2px; font-family:'Poppins',sans-serif;">
+      <span style="font-size:26px; font-weight:700; color:var(--navy);">BID FOR&nbsp;</span>
+      <span style="font-size:30px; font-weight:800; color:var(--gold);">C</span>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; align-items:center; padding:40px 0 28px; min-height:0;">
+
+    <div style="text-align:center; margin-bottom:12px;">
+      <div style="font-size:40px; font-weight:800; font-family:'Poppins',sans-serif; color:var(--navy); letter-spacing:0.04em;">LEADERBOARD</div>
+      <div style="font-size:13px; color:var(--text-muted); margin-top:4px; letter-spacing:0.02em;">Top Performing Teams</div>
+      <div style="width:64px; height:3px; background:var(--gold); border-radius:999px; margin:12px auto 0;"></div>
+    </div>
+
+    <div style="width:900px; display:flex; justify-content:space-between; padding:0 28px; margin:20px 0 10px;">
+      <span style="font-size:11px; font-weight:700; letter-spacing:0.1em; color:var(--text-muted); text-transform:uppercase;">Team</span>
+      <div style="display:flex; gap:64px;">
+        <span style="font-size:11px; font-weight:700; letter-spacing:0.1em; color:var(--text-muted); text-transform:uppercase;">Points</span>
+        <span style="font-size:11px; font-weight:700; letter-spacing:0.1em; color:var(--text-muted); text-transform:uppercase;">Coins</span>
+      </div>
+    </div>
+
+    <div style="width:900px; display:flex; flex-direction:column; gap:14px;">
+
+      <div style="display:flex; align-items:center; gap:18px; background:var(--surface); border:2px solid var(--gold); border-radius:18px; padding:18px 26px; box-shadow:0 10px 28px rgba(212,175,55,0.2); transform:scale(1.02);">
+        <div style="width:48px; height:48px; border-radius:999px; background:linear-gradient(165deg, var(--gold-light), var(--gold-dark)); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#0B3C5D" stroke="none"><path d="M5 8 2 6l1 8h18l1-8-3 2-3.5-5L12 7 8.5 3 5 8Z"/></svg>
+        </div>
+        <span style="flex:1; font-size:20px; font-weight:700; color:var(--text);">Byte Me Later</span>
+        <span style="display:flex; align-items:center; gap:6px; width:150px; justify-content:flex-end;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+          <span class="mono" style="font-size:24px; font-weight:700; color:var(--gold-dark);">180</span>
+          <span style="font-size:10px; color:var(--text-muted); font-weight:700;">PTS</span>
+        </span>
+        <span style="display:flex; align-items:baseline; gap:4px; width:120px; justify-content:flex-end;">
+          <span class="mono" style="font-size:15px; font-weight:600; color:var(--text-muted);">340</span>
+          <span style="font-size:9px; color:var(--text-muted); font-weight:700;">COINS</span>
+        </span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:18px; background:var(--surface); border:2px solid rgba(11,60,93,0.25); border-radius:16px; padding:15px 26px;">
+        <div style="width:42px; height:42px; border-radius:999px; background:var(--navy); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <span class="mono" style="font-size:16px; font-weight:700; color:#fff;">2</span>
+        </div>
+        <span style="flex:1; font-size:17px; font-weight:700; color:var(--text);">Null Pointers</span>
+        <span style="display:flex; align-items:center; gap:6px; width:150px; justify-content:flex-end;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          <span class="mono" style="font-size:20px; font-weight:700; color:var(--navy);">160</span>
+          <span style="font-size:10px; color:var(--text-muted); font-weight:700;">PTS</span>
+        </span>
+        <span style="display:flex; align-items:baseline; gap:4px; width:120px; justify-content:flex-end;">
+          <span class="mono" style="font-size:14px; font-weight:600; color:var(--text-muted);">290</span>
+          <span style="font-size:9px; color:var(--text-muted); font-weight:700;">COINS</span>
+        </span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:18px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:15px 26px;">
+        <div style="width:42px; height:42px; border-radius:999px; background:#fff; border:2px solid var(--gold); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <span class="mono" style="font-size:16px; font-weight:700; color:var(--gold-dark);">3</span>
+        </div>
+        <span style="flex:1; font-size:17px; font-weight:700; color:var(--text);">Stack Overflow</span>
+        <span style="display:flex; align-items:center; gap:6px; width:150px; justify-content:flex-end;">
+          <span class="mono" style="font-size:20px; font-weight:700; color:var(--navy);">140</span>
+          <span style="font-size:10px; color:var(--text-muted); font-weight:700;">PTS</span>
+        </span>
+        <span style="display:flex; align-items:baseline; gap:4px; width:120px; justify-content:flex-end;">
+          <span class="mono" style="font-size:14px; font-weight:600; color:var(--text-muted);">255</span>
+          <span style="font-size:9px; color:var(--text-muted); font-weight:700;">COINS</span>
+        </span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:18px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:13px 26px; opacity:0.85;">
+        <div style="width:38px; height:38px; border-radius:999px; background:#F1F5F9; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <span class="mono" style="font-size:14px; font-weight:700; color:var(--text-muted);">4</span>
+        </div>
+        <span style="flex:1; font-size:15.5px; font-weight:600; color:var(--text-secondary);">Segfault Squad</span>
+        <span style="display:flex; align-items:center; gap:6px; width:150px; justify-content:flex-end;">
+          <span class="mono" style="font-size:17px; font-weight:700; color:var(--text-secondary);">110</span>
+          <span style="font-size:10px; color:var(--text-muted); font-weight:700;">PTS</span>
+        </span>
+        <span style="display:flex; align-items:baseline; gap:4px; width:120px; justify-content:flex-end;">
+          <span class="mono" style="font-size:13px; font-weight:600; color:var(--text-muted);">210</span>
+          <span style="font-size:9px; color:var(--text-muted); font-weight:700;">COINS</span>
+        </span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:18px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:13px 26px; opacity:0.85;">
+        <div style="width:38px; height:38px; border-radius:999px; background:#F1F5F9; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <span class="mono" style="font-size:14px; font-weight:700; color:var(--text-muted);">5</span>
+        </div>
+        <span style="flex:1; font-size:15.5px; font-weight:600; color:var(--text-secondary);">Kernel Panic</span>
+        <span style="display:flex; align-items:center; gap:6px; width:150px; justify-content:flex-end;">
+          <span class="mono" style="font-size:17px; font-weight:700; color:var(--text-secondary);">90</span>
+          <span style="font-size:10px; color:var(--text-muted); font-weight:700;">PTS</span>
+        </span>
+        <span style="display:flex; align-items:baseline; gap:4px; width:120px; justify-content:flex-end;">
+          <span class="mono" style="font-size:13px; font-weight:600; color:var(--text-muted);">180</span>
+          <span style="font-size:9px; color:var(--text-muted); font-weight:700;">COINS</span>
+        </span>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "categories": [
+    { "slug": "super_easy", "label": "Super Easy", "defaultReward": 15, "defaultTime": 120 },
+    { "slug": "easy", "label": "Easy", "defaultReward": 30, "defaultTime": 150 },
+    { "slug": "medium", "label": "Medium", "defaultReward": 60, "defaultTime": 210 },
+    { "slug": "hard", "label": "Hard", "defaultReward": 115, "defaultTime": 270 },
+    { "slug": "bonus", "label": "Bonus", "defaultReward": 75, "defaultTime": 180 },
+    { "slug": "jackpot", "label": "Jackpot", "defaultReward": null, "defaultTime": 300 },
+    { "slug": "code_fix", "label": "Code Fix / Debugging", "defaultReward": null, "defaultTime": 150 },
+    { "slug": "code_completion", "label": "Code Completion", "defaultReward": 60, "defaultTime": 240 }
+  ],
+  "questions": [
+    { "id": "super_easy_1", "category": "super_easy", "title": "Sum of Digits", "description": "Write a C program to calculate the sum of all digits of a given positive integer.", "example": { "input": "5832", "output": "18" } },
+    { "id": "super_easy_2", "category": "super_easy", "title": "Count Even Numbers", "description": "Given an array of N integers, count how many elements are even.", "example": { "input": "2 7 8 3 10 5", "output": "3" } },
+    { "id": "super_easy_3", "category": "super_easy", "title": "Reverse a Number", "description": "Write a C program to reverse a given integer.", "example": { "input": "12340", "output": "4321" } },
+    { "id": "super_easy_4", "category": "super_easy", "title": "Largest Element", "description": "Find the largest element in an integer array without sorting the array.", "example": { "input": "4 9 2 17 6", "output": "17" } },
+    { "id": "super_easy_5", "category": "super_easy", "title": "Character Counter", "description": "Given a string, count the number of vowels in it.", "example": { "input": "programming", "output": "3" } },
+
+    { "id": "easy_1", "category": "easy", "title": "Second Largest", "description": "Find the second largest distinct element in an array without sorting it.", "example": { "input": "10 5 20 8 20 15", "output": "15" } },
+    { "id": "easy_2", "category": "easy", "title": "Remove Duplicates", "description": "Given an integer array, remove duplicate elements and print only the first occurrence of each element.", "example": { "input": "2 5 2 8 5 9 8", "output": "2 5 8 9" } },
+    { "id": "easy_3", "category": "easy", "title": "Frequency of Elements", "description": "Find the frequency of every distinct element in an array.", "example": { "input": "2 3 2 5 3 2", "output": "2→3, 3→2, 5→1" } },
+    { "id": "easy_4", "category": "easy", "title": "Palindrome String", "description": "Check whether a given string is a palindrome without using a library function to reverse the string.", "example": { "input": "madam", "output": "Palindrome" } },
+    { "id": "easy_5", "category": "easy", "title": "Missing Number", "description": "An array contains numbers from 1 to N, with exactly one number missing. Find the missing number.", "example": { "input": "N=6; Array=1 2 3 5 6", "output": "4" } },
+
+    { "id": "medium_1", "category": "medium", "title": "Array Rotation", "description": "Rotate an array to the right by K positions.", "example": { "input": "1 2 3 4 5 6, K=2", "output": "5 6 1 2 3 4" }, "note": "K may be greater than N." },
+    { "id": "medium_2", "category": "medium", "title": "First Non-Repeating Character", "description": "Given a string, find the first character that occurs exactly once.", "example": { "input": "swiss", "output": "w" } },
+    { "id": "medium_3", "category": "medium", "title": "Maximum Subarray Sum", "description": "Find the maximum possible sum of a contiguous subarray.", "example": { "input": "−2 1 −3 4 −1 2 1 −5", "output": "6" } },
+    { "id": "medium_4", "category": "medium", "title": "Merge Two Sorted Arrays", "description": "Given two sorted arrays, merge them into one sorted array without using a sorting function.", "example": { "input": "A=1 4 7; B=2 3 8", "output": "1 2 3 4 7 8" } },
+    { "id": "medium_5", "category": "medium", "title": "Matrix Boundary Sum", "description": "Given an N×N matrix, calculate the sum of all boundary elements.", "example": { "input": "1 2 3 / 4 5 6 / 7 8 9", "output": "40" } },
+
+    { "id": "hard_1", "category": "hard", "title": "Array Shift Without Extra Array", "description": "Shift an array to the left by K positions without using another array.", "example": { "input": "10 20 30 40 50 60 70, K=3", "output": "40 50 60 70 10 20 30" }, "note": "Use O(1) extra space." },
+    { "id": "hard_2", "category": "hard", "title": "Linked List Middle Element", "description": "Create a singly linked list and find its middle element.", "example": { "input": "10 20 30 40 50", "output": "30" }, "note": "Do not count the nodes first; use the slow/fast pointer technique." },
+    { "id": "hard_3", "category": "hard", "title": "Remove Consecutive Duplicates", "description": "Given a string, remove consecutive duplicate characters.", "example": { "input": "aaabbccdaa", "output": "abcda" } },
+    { "id": "hard_4", "category": "hard", "title": "Rotate Matrix", "description": "Rotate an N×N matrix 90° clockwise in-place.", "example": { "input": "1 2 3 / 4 5 6 / 7 8 9", "output": "7 4 1 / 8 5 2 / 9 6 3" } },
+    { "id": "hard_5", "category": "hard", "title": "Linked List Reverse", "description": "Create a singly linked list and reverse it without creating a second linked list.", "example": { "input": "10 20 30 40", "output": "40 30 20 10" }, "note": "Use O(1) extra space." },
+
+    { "id": "bonus_1", "category": "bonus", "title": "Missing + Duplicate Number", "description": "An array contains numbers from 1 to N. Exactly one number is missing and exactly one number appears twice. Find both.", "example": { "input": "1 2 3 3 5 6", "output": "Missing=4, Duplicate=3" } },
+    { "id": "bonus_2", "category": "bonus", "title": "Longest Consecutive Sequence", "description": "Given an unsorted array, find the length of the longest sequence of consecutive integers.", "example": { "input": "100 4 200 1 3 2", "output": "4" } },
+    { "id": "bonus_3", "category": "bonus", "title": "Balanced Brackets", "description": "Check whether a string containing (), [], and {} has balanced brackets.", "example": { "input": "{[()]}", "output": "Balanced" } },
+    { "id": "bonus_4", "category": "bonus", "title": "Majority Element", "description": "Find an element that appears more than N/2 times in an array.", "example": { "input": "2 2 1 2 3 2 2", "output": "2" }, "note": "Try solving it without an extra frequency array." },
+
+    { "id": "jackpot_1", "category": "jackpot", "title": "Spiral Matrix", "description": "Given an N×M matrix, print all elements in spiral order.", "example": { "input": "1 2 3 4 / 5 6 7 8 / 9 10 11 12", "output": "1 2 3 4 8 12 11 10 9 5 6 7" }, "reward": 500 },
+    { "id": "jackpot_2", "category": "jackpot", "title": "Longest Substring Without Repeating Characters", "description": "Given a string, find the length of the longest substring containing no repeated characters.", "example": { "input": "abcabcbb", "output": "3" }, "reward": 750 },
+    { "id": "jackpot_3", "category": "jackpot", "title": "Merge Overlapping Intervals", "description": "Given several intervals, merge all overlapping intervals.", "example": { "input": "[1,3], [2,6], [8,10], [9,12]", "output": "[1,6], [8,12]" }, "reward": 1000 },
+    { "id": "jackpot_4", "category": "jackpot", "title": "Linked List Loop Detection", "description": "Create a singly linked list and determine whether the linked list contains a cycle.", "example": { "input": "—", "output": "\"Cycle Detected\" if a cycle exists; otherwise \"No Cycle\"" }, "note": "Do not use an array or extra list to store visited nodes. Use the slow/fast pointer concept.", "reward": 1000 },
+
+    { "id": "code_fix_1", "category": "code_fix", "title": "Find Maximum", "description": "Fix the program so it correctly prints Maximum = 89.", "reward": 30, "code": "#include <stdio.h>\n\nint main() {\n    int a[] = {12, 45, 7, 89, 23};\n    int n = 5;\n    int max = 0;\n\n    for (int i = 0; i < n; i++) {\n        if (a[i] < max) {\n            max = a[i];\n        }\n    }\n\n    printf(\"Maximum = %d\", max);\n    return 0;\n}" },
+    { "id": "code_fix_2", "category": "code_fix", "title": "Reverse Array", "description": "Fix the errors so the output becomes 50 40 30 20 10.", "reward": 40, "code": "#include <stdio.h>\n\nint main() {\n    int a[] = {10, 20, 30, 40, 50};\n    int n = 5;\n\n    for (int i = 0; i < n / 2; i++) {\n        int temp = a[i];\n        a[i] = a[n - i];\n        a[n - i] = temp;\n    }\n\n    for (int i = 0; i < n; i++) {\n        printf(\"%d \", a[i]);\n    }\n    return 0;\n}" },
+    { "id": "code_fix_3", "category": "code_fix", "title": "Pointer Trick", "description": "Find and fix the error so the output becomes 20 10.", "reward": 50, "code": "#include <stdio.h>\n\nvoid swap(int *a, int *b) {\n    int *temp;\n    *temp = *a;\n    *a = *b;\n    *b = *temp;\n}\n\nint main() {\n    int x = 10;\n    int y = 20;\n    swap(&x, &y);\n    printf(\"%d %d\", x, y);\n    return 0;\n}" },
+
+    { "id": "code_completion_1", "category": "code_completion", "title": "Array Rotation", "description": "Complete the missing function and main logic. Expected output: 5 6 1 2 3 4.", "code": "#include <stdio.h>\n\nvoid reverse(int a[], int start, int end) {\n    // COMPLETE THIS FUNCTION\n}\n\nint main() {\n    int a[] = {1, 2, 3, 4, 5, 6};\n    int n = 6;\n    int k = 2;\n\n    // COMPLETE THE LOGIC\n\n    for (int i = 0; i < n; i++) {\n        printf(\"%d \", a[i]);\n    }\n    return 0;\n}" },
+    { "id": "code_completion_2", "category": "code_completion", "title": "Linked List", "description": "Complete the code to create nodes, connect them, and print the linked list. Expected output: 10 20 30 40 50.", "code": "#include <stdio.h>\n#include <stdlib.h>\n\nstruct Node {\n    int data;\n    struct Node *next;\n};\n\nint main() {\n    struct Node *head = NULL;\n\n    // COMPLETE:\n    // 1. Create nodes\n    // 2. Connect the nodes\n    // 3. Print the linked list\n\n    return 0;\n}" }
+  ]
+}

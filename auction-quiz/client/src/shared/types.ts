@@ -81,6 +81,8 @@ export interface QuestionManifestItem {
   reward: number;
   time: number; // in seconds
   used?: boolean;
+  title?: string;
+  category?: string;
 }
 
 export interface TimestampTimer {
