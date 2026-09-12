@@ -16,6 +16,8 @@ class StateManager {
   private leadingTeam: string = "";
   private manifest: QuestionManifestItem[] = [];
   private manifestPath: string = path.join(__dirname, "../../../questions/manifest.json");
+  private winnerCount: number = 3;
+  private resultsRevealed: boolean = false;
 
   constructor() {
     this.loadManifest();
@@ -164,6 +166,20 @@ class StateManager {
 
   public snapshot(): GameState {
     return this.getGameState();
+  }
+
+  /** Final-results reveal (admin-controlled, independent of round phase). */
+  public getResultsReveal(): { winnerCount: number; revealed: boolean } {
+    return { winnerCount: this.winnerCount, revealed: this.resultsRevealed };
+  }
+
+  public setWinnerCount(count: number): number {
+    this.winnerCount = Math.max(1, Math.min(10, Math.round(count)));
+    return this.winnerCount;
+  }
+
+  public setResultsRevealed(revealed: boolean): void {
+    this.resultsRevealed = revealed;
   }
 
   /** IDLE → BIDDING */

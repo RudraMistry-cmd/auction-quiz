@@ -7,6 +7,7 @@ import LiveAuctionScreen from "./pages/LiveAuctionScreen";
 import ScoreboardScreen from "./pages/ScoreboardScreen";
 import { BrandHeader } from "./components/BrandHeader";
 import { colors, fontFamily } from "./theme";
+import { tokens } from "./design-system";
 import "./App.css";
 
 // Secret non-guessable control panel route.
@@ -98,13 +99,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   link: {
     padding: "1rem 2rem",
-    borderRadius: "0.75rem",
+    borderRadius: tokens.radius.lg,
     backgroundColor: colors.surface,
     color: colors.ink,
     textDecoration: "none",
     fontSize: "1.125rem",
     fontWeight: "bold",
-    border: `1px solid ${colors.surfaceBorder}`,
+    border: "none",
+    boxShadow: tokens.shadow.sm,
   },
 };
 

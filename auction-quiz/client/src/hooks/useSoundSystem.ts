@@ -10,7 +10,8 @@ import { soundManager } from "../utils/soundManager";
  * - Every trigger is deduped (same logical event via game event + server
  *   sound:* mirror plays exactly once) and throttled in the manager.
  * - Timer-end uses a cross-source "played recently" guard so it fires once.
- * - Last-5-seconds ticks come from socket timer events (not render loops).
+ * - Last-10-seconds ticks come from socket timer events (not render loops),
+ *   covering the auction timer, the task timer, and the extra/fallback timer.
  */
 
 type AnySocket = Pick<Socket, "on" | "off"> | null | undefined;
@@ -99,21 +100,32 @@ export function useSoundSystem(socket: AnySocket): void {
     };
     const onExtraTimerStart = () => playFallbackOnce("fallback:extra-start");
 
-    // Last-5-seconds ticks from socket timer events (event-driven, throttled).
+    // Last-10-seconds ticks from socket timer events (event-driven, throttled).
     const onAuctionTimer = (d?: any) => {
       const r = d?.remaining;
-      if (typeof r === "number" && r <= 5 && r > 0) {
+      if (typeof r === "number" && r <= 10 && r > 0) {
         soundManager.playUnique(`tick:auction:${r}`, "timer_tick", 1200);
       }
       if (r === 0) playTimerEndOnce();
     };
     const onTaskTimer = (d?: any) => {
       const r = d?.timeLeft;
-      if (typeof r === "number" && r <= 5 && r > 0) {
+      if (typeof r === "number" && r <= 10 && r > 0) {
         soundManager.playUnique(`tick:task:${d.taskId ?? "?"}:${r}`, "timer_tick", 1200);
       }
       if (r === 0) playTimerEndOnce();
     };
+    // The extra/fallback timer has no dedicated per-second event; it rides the
+    // generic timer:update heartbeat (emitted every second for all timers).
+    const onTimerUpdateTick = (d?: any) => {
+      const extra = d?.explicitTimer ?? d?.extraTimer ?? d?.sideTaskTimer;
+      const r = extra?.remaining;
+      if (extra?.isRunning && typeof r === "number" && r <= 10 && r > 0) {
+        soundManager.playUnique(`tick:extra:${r}`, "timer_tick", 1200);
+      }
+    };
+    // Fired whenever the admin manually starts a timer (task or extra/side).
+    const onSrvTimerStarted = () => soundManager.play("timer_start");
 
     /* ── Global sound bus: triggers from anywhere, played ONLY here
          (this hook is mounted solely on the Live Display) ── */
@@ -184,10 +196,12 @@ export function useSoundSystem(socket: AnySocket): void {
       ["timer:side:start", onExtraTimerStart],
       ["auction:timer", onAuctionTimer],
       ["task:timer", onTaskTimer],
+      ["timer:update", onTimerUpdateTick],
       ["sound:play", onSoundBus],
       ["sound:auction_started", onSrvAuctionStarted],
       ["sound:bid_updated", onSrvBidUpdated],
       ["sound:bid_won", onSrvBidWon],
+      ["sound:timer_started", onSrvTimerStarted],
       ["sound:timer_stopped", onSrvTimerStopped],
       ["sound:task_result", onSrvTaskResult],
       ["sound:settings", onSrvSettings],

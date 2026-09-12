@@ -88,6 +88,7 @@ export function setupSocketHandlers(io: Server) {
       activeTask: taskState.task || null,
       taskTimer: taskState.task ? taskState.task.timeLeft : undefined,
       theme: currentTheme,
+      resultsReveal: stateManager.getResultsReveal(),
     };
   };
 
@@ -753,6 +754,51 @@ export function setupSocketHandlers(io: Server) {
         await broadcastFullState();
         cb({ success: true });
         console.log(`[Theme] Theme changed to: ${theme}`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
+    // ─── Final Results Reveal (admin-controlled, independent of round phase) ───
+    socket.on("admin:set_winner_count", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const count = Number(data?.count);
+        if (!Number.isFinite(count)) {
+          cb({ success: false, error: "Invalid winner count" });
+          return;
+        }
+        const winnerCount = stateManager.setWinnerCount(count);
+        const revealed = stateManager.getResultsReveal().revealed;
+        io.emit("results:changed", { winnerCount, revealed });
+        cb({ success: true, winnerCount });
+        console.log(`[Results] Winner count set to ${winnerCount}`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
+    socket.on("admin:reveal_results", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        stateManager.setResultsRevealed(true);
+        const { winnerCount } = stateManager.getResultsReveal();
+        io.emit("results:changed", { winnerCount, revealed: true });
+        cb({ success: true });
+        console.log(`[Results] Final results revealed (top ${winnerCount})`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
+    socket.on("admin:hide_results", async (_data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        stateManager.setResultsRevealed(false);
+        const { winnerCount } = stateManager.getResultsReveal();
+        io.emit("results:changed", { winnerCount, revealed: false });
+        cb({ success: true });
+        console.log(`[Results] Reverted to live scoreboard`);
       } catch (err: any) {
         cb({ success: false, error: err.message || "Failed" });
       }

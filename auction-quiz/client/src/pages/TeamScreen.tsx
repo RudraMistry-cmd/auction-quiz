@@ -3,6 +3,7 @@ import { useGamePhase, formatClock } from "../hooks/useGamePhase";
 import { getServerBase } from "../hooks/useSocket";
 import { tokens } from "../design-system";
 import { BrandHeader } from "../components/BrandHeader";
+import { BoltIcon, HourglassIcon, FlagIcon, TargetIcon } from "../components/icons";
 import type { Team, Auction, Bid, TaskResultEvent } from "../shared/types";
 
 const C = tokens.color;
@@ -684,7 +685,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
                 border: `1px solid ${C.accent}50`,
                 marginBottom: "20px",
               }}>
-                <span style={{ fontSize: "1.1rem" }}>⚡</span>
+                <BoltIcon size={18} color={C.accentDark} style={{ flexShrink: 0 }} />
                 <span style={{ fontFamily: F.body, fontSize: "0.85rem", color: C.text, fontWeight: 600, lineHeight: 1.4 }}>
                   Your team name will be assigned automatically from the pool.
                 </span>
@@ -954,8 +955,14 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
             </div>
           ) : (
             <div style={inactivePlaceholderCard}>
-              <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>
-                {phase === "main_task" ? (isWinner ? "⚡" : "⏳") : phase === "ended" ? "🏁" : "🎯"}
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: "4px" }}>
+                {phase === "main_task" ? (
+                  isWinner ? <BoltIcon size={28} color={C.accent} /> : <HourglassIcon size={28} color={C.muted} />
+                ) : phase === "ended" ? (
+                  <FlagIcon size={28} color={C.primary} />
+                ) : (
+                  <TargetIcon size={28} color={C.accent} />
+                )}
               </div>
               <div style={{ fontFamily: F.heading, fontWeight: 800, fontSize: "0.95rem", color: C.primary, marginBottom: "4px" }}>
                 {placeholderTitle}
@@ -1186,11 +1193,11 @@ const statCard = (flash: boolean, color: string): React.CSSProperties => ({
   flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
-  padding: "10px 14px",
+  padding: "14px 16px",
   backgroundColor: C.bg,
-  border: `2px solid ${flash ? color : C.border}`,
+  border: flash ? `2px solid ${color}` : "none",
   borderRadius: tokens.radius.lg,
-  boxShadow: flash ? `0 0 16px ${color}44` : tokens.shadow.xs,
+  boxShadow: flash ? `0 0 16px ${color}44` : tokens.shadow.sm,
   transition: "all 0.25s ease",
   animation: flash ? "cardFlash 0.6s ease" : "none",
 });
@@ -1239,11 +1246,12 @@ const bidCardInactive: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
-  padding: "12px 18px",
-  backgroundColor: `${C.bg}80`,
+  padding: "16px 18px",
+  backgroundColor: C.bg,
   borderRadius: tokens.radius.xl,
-  border: `1.5px dashed ${C.border}`,
-  opacity: 0.7,
+  border: "none",
+  boxShadow: tokens.shadow.xs,
+  opacity: 0.75,
   flexShrink: 0,
 };
 
@@ -1322,8 +1330,8 @@ function bidButtonStyle(
     : disabled
     ? `${C.border}60`
     : isGold
-    ? C.accent
-    : C.primary;
+    ? `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`
+    : `linear-gradient(180deg, ${C.primaryLight}, ${C.primary})`;
   const textColor = isLeading
     ? C.success
     : disabled
@@ -1349,7 +1357,7 @@ function bidButtonStyle(
     padding: "12px 14px",
     borderRadius: tokens.radius.lg,
     border: `2px solid ${borderColor}`,
-    backgroundColor: bgColor,
+    background: bgColor,
     color: textColor,
     fontFamily: F.heading,
     cursor: disabled ? "not-allowed" : "pointer",
@@ -1566,7 +1574,7 @@ const regRoot: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
   flexDirection: "column",
-  backgroundColor: C.primary,
+  background: `linear-gradient(165deg, ${C.primaryLight} 0%, ${C.primary} 45%, ${C.primaryDark} 100%)`,
   color: "#FFFFFF",
   fontFamily: F.body,
   userSelect: "none",
@@ -1607,7 +1615,7 @@ const regRight: React.CSSProperties = {
 
 const regFormCard: React.CSSProperties = {
   backgroundColor: "#FFFFFF",
-  borderRadius: "16px",
+  borderRadius: "20px",
   padding: "clamp(24px, 3vw, 36px)",
   width: "100%",
   maxWidth: "400px",
@@ -1618,7 +1626,7 @@ const regInput: React.CSSProperties = {
   fontFamily: F.body,
   fontSize: "0.95rem",
   padding: "12px 16px",
-  borderRadius: "8px",
+  borderRadius: "12px",
   border: `2px solid ${C.border}`,
   backgroundColor: C.bg,
   color: C.text,
@@ -1633,10 +1641,11 @@ const regBtn: React.CSSProperties = {
   fontWeight: 700,
   fontSize: "1rem",
   padding: "14px 24px",
-  borderRadius: "8px",
+  borderRadius: "12px",
   border: "none",
-  backgroundColor: C.accent,
-  color: C.primary,
+  background: `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`,
+  color: C.primaryDark,
+  boxShadow: `0 6px 18px ${C.accent}40`,
   cursor: "pointer",
   width: "100%",
   marginTop: "8px",

@@ -61,6 +61,8 @@ export function useGamePhase() {
   const [activeQuestion, setActiveQuestion] = useState<QuestionPayload | null>(null);
   const [scoreboard, setScoreboard] = useState<any[]>([]);
   const [activeAuction, setActiveAuction] = useState<any | null>(null);
+  const [winnerCount, setWinnerCount] = useState<number>(3);
+  const [resultsRevealed, setResultsRevealed] = useState<boolean>(false);
 
   const seenVersion = useRef(0);
   const hasLiveTaskEvent = useRef(false);
@@ -117,6 +119,10 @@ export function useGamePhase() {
         setExplicitTimer(full.timers.extraTimer);
         setSideTaskTimer(full.timers.extraTimer);
       }
+    }
+    if (full.resultsReveal) {
+      setWinnerCount(full.resultsReveal.winnerCount);
+      setResultsRevealed(full.resultsReveal.revealed);
     }
     if ((full as any).upcomingQuestion !== undefined) setUpcomingQuestion((full as any).upcomingQuestion);
     if ((full as any).activeQuestion !== undefined) setActiveQuestion((full as any).activeQuestion);
@@ -537,6 +543,12 @@ export function useGamePhase() {
       }
     };
 
+    const handleResultsChanged = (data: { winnerCount: number; revealed: boolean }) => {
+      lastEventTime.current = Date.now();
+      if (typeof data.winnerCount === "number") setWinnerCount(data.winnerCount);
+      if (typeof data.revealed === "boolean") setResultsRevealed(data.revealed);
+    };
+
     const handleSystemReset = () => {
       lastEventTime.current = Date.now();
       setPhase("idle");
@@ -589,6 +601,7 @@ export function useGamePhase() {
     socket.on("task:paused", handlePaused);
     socket.on("task:resumed", handleResumed);
     socket.on("task:result", handleTaskResult);
+    socket.on("results:changed" as any, handleResultsChanged);
     socket.on("system:reset" as any, handleSystemReset);
 
     return () => {
@@ -623,6 +636,7 @@ export function useGamePhase() {
       socket.off("task:paused", handlePaused);
       socket.off("task:resumed", handleResumed);
       socket.off("task:result", handleTaskResult);
+      socket.off("results:changed" as any, handleResultsChanged);
       socket.off("system:reset" as any, handleSystemReset);
     };
   }, [socket, connected, handleFullState]);
@@ -650,5 +664,7 @@ export function useGamePhase() {
     activeQuestion,
     scoreboard,
     activeAuction,
+    winnerCount,
+    resultsRevealed,
   };
 }

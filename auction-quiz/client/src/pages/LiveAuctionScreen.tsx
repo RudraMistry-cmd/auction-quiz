@@ -5,6 +5,7 @@ import { BrandHeader } from "../components/BrandHeader";
 import { tokens } from "../design-system";
 import { useSoundSystem } from "../hooks/useSoundSystem";
 import { soundManager } from "../utils/soundManager";
+import { CheckCircleIcon, XCircleIcon, TargetIcon, SpeakerIcon } from "../components/icons";
 import type { Auction, Bid, TaskResultEvent } from "../shared/types";
 
 const C = tokens.color;
@@ -299,9 +300,9 @@ export default function LiveAuctionScreen() {
             soundManager.unlock();
             setSoundReady(true);
           }}
-          style={enableSoundBtn}
+          style={{ ...enableSoundBtn, display: "flex", alignItems: "center", gap: "10px" }}
         >
-          🔊 Enable Sound
+          <SpeakerIcon size={20} color="#0F172A" /> Enable Sound
         </button>
       )}
 
@@ -693,12 +694,22 @@ export default function LiveAuctionScreen() {
           {isResultState && (
             <div style={stateContainer}>
               <div style={resultCard(resultData ? resultData.result === "pass" : true)}>
-                <div style={resultTitle(resultData ? resultData.result === "pass" : true)}>
-                  {resultData
-                    ? resultData.result === "pass"
-                      ? `✅ ${resultData.teamName} PASSED`
-                      : `❌ ${resultData.teamName} FAILED`
-                    : "ROUND COMPLETE"}
+                <div style={{ ...resultTitle(resultData ? resultData.result === "pass" : true), display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+                  {resultData ? (
+                    resultData.result === "pass" ? (
+                      <>
+                        <CheckCircleIcon size={26} color={C.success} />
+                        {resultData.teamName} PASSED
+                      </>
+                    ) : (
+                      <>
+                        <XCircleIcon size={26} color={C.danger} />
+                        {resultData.teamName} FAILED
+                      </>
+                    )
+                  ) : (
+                    "ROUND COMPLETE"
+                  )}
                 </div>
                 {resultData?.result === "pass" && (
                   <div style={resultPointsText}>
@@ -723,7 +734,7 @@ export default function LiveAuctionScreen() {
               ─────────────────────────────────────────────────── */}
           {isIdleState && (
             <div style={neutralContainer}>
-              <div style={neutralIcon}>🎯</div>
+              <div style={neutralIcon}><TargetIcon size={44} color={C.accent} /></div>
               <div style={neutralTitle}>Waiting for Auction</div>
               <p style={neutralText}>
                 The next challenge will be presented shortly. Stand by for the countdown!
@@ -811,8 +822,8 @@ const enableSoundBtn: React.CSSProperties = {
   zIndex: 1000,
   padding: "14px 32px",
   borderRadius: tokens.radius.full,
-  border: `2px solid ${C.accent}`,
-  backgroundColor: C.accent,
+  border: "none",
+  background: `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`,
   color: "#0F172A",
   fontFamily: F.heading,
   fontWeight: 800,
@@ -944,8 +955,8 @@ const currentBidCard = (flash: boolean): React.CSSProperties => ({
   padding: "14px 20px",
   borderRadius: tokens.radius.xl,
   backgroundColor: C.bg,
-  border: `2px solid ${flash ? C.accent : C.border}`,
-  boxShadow: flash ? `0 0 24px ${C.accent}60` : tokens.shadow.xs,
+  border: flash ? `2px solid ${C.accent}` : "none",
+  boxShadow: flash ? `0 0 24px ${C.accent}60` : tokens.shadow.sm,
   animation: flash ? "bidPop 0.4s ease" : "none",
   transition: "all 0.25s ease",
   flexShrink: 0,
@@ -1021,9 +1032,9 @@ const bidRow = (isTop: boolean): React.CSSProperties => ({
   justifyContent: "space-between",
   padding: isTop ? "8px 12px" : "6px 10px",
   borderRadius: tokens.radius.md,
-  backgroundColor: isTop ? `${C.accent}18` : `${C.bg}80`,
-  border: isTop ? `1.5px solid ${C.accent}` : `1px solid ${C.border}`,
-  boxShadow: isTop ? `0 0 12px ${C.accent}30` : "none",
+  backgroundColor: isTop ? `${C.accent}18` : C.bg,
+  border: isTop ? `1.5px solid ${C.accent}` : "none",
+  boxShadow: isTop ? `0 0 12px ${C.accent}30` : tokens.shadow.xs,
   transition: "all 0.2s ease",
   flexShrink: 0,
 });
@@ -1176,7 +1187,8 @@ const neutralContainer: React.CSSProperties = {
 };
 
 const neutralIcon: React.CSSProperties = {
-  fontSize: "2.5rem",
+  display: "flex",
+  justifyContent: "center",
   marginBottom: "4px",
 };
 
@@ -1219,7 +1231,7 @@ const questionCard: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   backgroundColor: C.surface,
-  border: `1px solid ${C.border}`,
+  border: "none",
   borderRadius: tokens.radius.xl,
   padding: "16px 20px",
   boxSizing: "border-box",

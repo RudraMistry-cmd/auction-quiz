@@ -4,6 +4,7 @@ import { useGamePhase } from "../hooks/useGamePhase";
 import { BrandHeader } from "../components/BrandHeader";
 import { tokens } from "../design-system";
 import { listReorder } from "../utils/motion";
+import { CrownIcon } from "../components/icons";
 
 const C = tokens.color;
 const F = tokens.font;
@@ -39,11 +40,10 @@ const RankBadge = memo(function RankBadge({ rank }: { rank: number }) {
             top: "-14px",
             left: "50%",
             transform: "translateX(-50%)",
-            fontSize: "1.25rem",
             lineHeight: 1,
           }}
         >
-          👑
+          <CrownIcon size={22} color={C.accent} />
         </span>
         <div
           style={{
@@ -54,7 +54,7 @@ const RankBadge = memo(function RankBadge({ rank }: { rank: number }) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: C.accent,
+            background: `linear-gradient(160deg, ${C.accentLight}, ${C.accentDark})`,
             color: "#0F172A",
             fontFamily: F.heading,
             fontWeight: 800,
@@ -79,7 +79,7 @@ const RankBadge = memo(function RankBadge({ rank }: { rank: number }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: C.primary,
+          background: `linear-gradient(160deg, ${C.primaryLight}, ${C.primaryDark})`,
           color: "#FFFFFF",
           fontFamily: F.heading,
           fontWeight: 800,
@@ -205,13 +205,13 @@ const TeamRow = memo(function TeamRow({
         }
       : isThird
         ? {
-            border: `1.5px solid ${C.border}`,
+            border: `1.5px solid ${C.accent}80`,
             boxShadow: tokens.shadow.sm,
             padding: "16px 28px",
             borderRadius: tokens.radius.lg,
           }
         : {
-            border: `1px solid ${C.border}`,
+            border: "none",
             boxShadow: tokens.shadow.sm,
             padding: "15px 28px",
             borderRadius: tokens.radius.lg,
@@ -384,7 +384,7 @@ const TeamRow = memo(function TeamRow({
 
 /* ─── Main Screen ─── */
 export default function ScoreboardScreen() {
-  const { socket, connected, scoreboard: phaseScoreboard } = useGamePhase();
+  const { socket, connected, scoreboard: phaseScoreboard, winnerCount, resultsRevealed } = useGamePhase();
   // NOTE: No sound here — playback is Live Display ONLY.
   const [teams, setTeams] = useState<ScoreboardTeam[]>([]);
   const [prevRanks, setPrevRanks] = useState<Record<string, number>>({});
@@ -508,6 +508,8 @@ export default function ScoreboardScreen() {
 
   // Top 5 only — stable memo to avoid unnecessary re-renders
   const topFive = useMemo(() => sortTeams(teams).slice(0, 5), [teams]);
+  // Final-results reveal: admin-chosen winner count, ranks only (no points/coins).
+  const winners = useMemo(() => sortTeams(teams).slice(0, winnerCount), [teams, winnerCount]);
 
   return (
     <div style={root}>
@@ -547,40 +549,80 @@ export default function ScoreboardScreen() {
 
       {/* ─── 2. FULL-WIDTH CENTERED STAGE ─── */}
       <div style={stage}>
-        {/* ─── 3. TITLE BLOCK ─── */}
-        <div style={titleBlock}>
-          <h1 style={titleStyle}>LEADERBOARD</h1>
-          <p style={subtitleStyle}>Top Performing Teams</p>
-          <div style={accentRule} />
-        </div>
-
-        {topFive.length === 0 ? (
-          <div style={empty}>
-            <div style={emptyText}>Waiting for results...</div>
-          </div>
-        ) : (
-          <LayoutGroup>
-            <div style={listWrap}>
-              {/* Column labels */}
-              <div style={labelRow}>
-                <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
-                <div style={{ width: "150px", textAlign: "right", ...labelStyle }}>POINTS</div>
-                <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>COINS</div>
-              </div>
-
-              <AnimatePresence mode="popLayout" initial={false}>
-                {topFive.map((t, i) => (
-                  <TeamRow
-                    key={t.teamId}
-                    team={t}
-                    rank={i + 1}
-                    prevRank={prevRanks[t.teamId] ?? 0}
-                    highlight={flashIds.has(t.teamId)}
-                  />
-                ))}
-              </AnimatePresence>
+        {resultsRevealed ? (
+          <>
+            {/* ─── FINAL RESULTS REVEAL ─── */}
+            <div style={titleBlock}>
+              <h1 style={titleStyle}>WINNERS</h1>
+              <p style={subtitleStyle}>Congratulations to our top {winnerCount === 1 ? "team" : `${winnerCount} teams`}</p>
+              <div style={accentRule} />
             </div>
-          </LayoutGroup>
+
+            {winners.length === 0 ? (
+              <div style={empty}>
+                <div style={emptyText}>No results yet</div>
+              </div>
+            ) : (
+              <div style={winnersListWrap}>
+                {winners.map((t, i) => (
+                  <motion.div
+                    key={t.teamId}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: i * 0.08, ease: "easeOut" }}
+                    style={winnerRowStyle(i + 1)}
+                  >
+                    <div style={{ width: i === 0 ? "64px" : "56px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <RankBadge rank={i + 1} />
+                    </div>
+                    <div style={winnerNameStyle(i + 1)}>{t.teamName}</div>
+                    <div style={winnerPointsWrap}>
+                      <span style={winnerPointsStyle(i + 1)}>{t.reward_points}</span>
+                      <span style={winnerPointsLabel}>PTS</span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* ─── 3. TITLE BLOCK ─── */}
+            <div style={titleBlock}>
+              <h1 style={titleStyle}>LEADERBOARD</h1>
+              <p style={subtitleStyle}>Top Performing Teams</p>
+              <div style={accentRule} />
+            </div>
+
+            {topFive.length === 0 ? (
+              <div style={empty}>
+                <div style={emptyText}>Waiting for results...</div>
+              </div>
+            ) : (
+              <LayoutGroup>
+                <div style={listWrap}>
+                  {/* Column labels */}
+                  <div style={labelRow}>
+                    <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
+                    <div style={{ width: "150px", textAlign: "right", ...labelStyle }}>POINTS</div>
+                    <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>COINS</div>
+                  </div>
+
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {topFive.map((t, i) => (
+                      <TeamRow
+                        key={t.teamId}
+                        team={t}
+                        rank={i + 1}
+                        prevRank={prevRanks[t.teamId] ?? 0}
+                        highlight={flashIds.has(t.teamId)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </LayoutGroup>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -675,6 +717,72 @@ const listWrap: React.CSSProperties = {
   gap: "12px",
   width: "100%",
   maxWidth: "960px",
+};
+
+const winnersListWrap: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "16px",
+  width: "100%",
+  maxWidth: "760px",
+};
+
+function winnerRowStyle(rank: number): React.CSSProperties {
+  const isFirst = rank === 1;
+  const isSecond = rank === 2;
+  const isThird = rank === 3;
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: "24px",
+    backgroundColor: C.surface,
+    padding: isFirst ? "24px 32px" : isSecond ? "20px 32px" : "17px 32px",
+    borderRadius: tokens.radius.xl,
+    border: isFirst
+      ? `2px solid ${C.accent}`
+      : isSecond
+        ? `1.5px solid ${C.accent}`
+        : isThird
+          ? `1.5px solid ${C.accent}80`
+          : "none",
+    boxShadow: isFirst ? `${tokens.shadow.gold}, ${tokens.shadow.md}` : tokens.shadow.sm,
+    transform: isFirst ? "scale(1.03)" : "none",
+    transformOrigin: "center",
+  };
+}
+
+function winnerNameStyle(rank: number): React.CSSProperties {
+  return {
+    flex: 1,
+    fontFamily: F.heading,
+    fontWeight: rank === 1 ? 800 : 700,
+    fontSize: rank === 1 ? "clamp(1.6rem, 3vw, 2.3rem)" : rank <= 3 ? "clamp(1.3rem, 2.4vw, 1.8rem)" : "clamp(1.1rem, 2vw, 1.5rem)",
+    color: C.text,
+  };
+}
+
+const winnerPointsWrap: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: "6px",
+  flexShrink: 0,
+};
+
+function winnerPointsStyle(rank: number): React.CSSProperties {
+  return {
+    fontFamily: F.mono,
+    fontWeight: 800,
+    fontVariantNumeric: "tabular-nums",
+    fontSize: rank === 1 ? "clamp(1.6rem, 3vw, 2.2rem)" : rank <= 3 ? "clamp(1.3rem, 2.4vw, 1.75rem)" : "clamp(1.1rem, 2vw, 1.45rem)",
+    color: rank === 1 ? C.accent : C.primary,
+  };
+}
+
+const winnerPointsLabel: React.CSSProperties = {
+  fontSize: "0.7rem",
+  fontWeight: 700,
+  color: C.muted,
+  letterSpacing: "0.08em",
 };
 
 const labelRow: React.CSSProperties = {

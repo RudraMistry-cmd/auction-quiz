@@ -15,10 +15,10 @@ function Card({ title, children, span, scroll }: { title: string; children: Reac
     <div style={{
       gridColumn: span ? `span ${span}` : "span 12",
       backgroundColor: C.surface,
-      border: `1px solid ${C.border}`,
-      borderRadius: "12px",
-      padding: "20px 24px",
-      boxShadow: tokens.shadow.sm,
+      border: "none",
+      borderRadius: "20px",
+      padding: "22px 26px",
+      boxShadow: tokens.shadow.md,
       display: "flex", flexDirection: "column",
       overflow: scroll ? "hidden" : undefined,
       minHeight: 0,
@@ -63,6 +63,8 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     extraTimer,
     activeAuction,
     scoreboard: phaseScoreboard,
+    winnerCount,
+    resultsRevealed,
   } = useGamePhase();
   // NOTE: No sound playback here — admin only broadcasts settings.
   // Playback happens strictly on the Live Display screen.
@@ -75,6 +77,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const [scoreboard, setScoreboard] = useState<ScoreboardTeam[]>([]);
   const [lastEvent, setLastEvent] = useState<string>("");
   const [startArmed, setStartArmed] = useState(false);
+  const [resultsBusy, setResultsBusy] = useState(false);
 
   // Task & Extra Timer controls
   const [taskTimerDuration, setTaskTimerDuration] = useState<number>(60);
@@ -431,6 +434,39 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     });
   };
 
+  const setWinnerCountValue = (count: number) => {
+    if (!socket) return;
+    socket.emit("admin:set_winner_count", { count }, (res) => {
+      if (!res.success) setLastEvent(`Error: ${res.error || "Failed to set winner count"}`);
+    });
+  };
+
+  const revealResults = () => {
+    if (!socket || resultsBusy) return;
+    setResultsBusy(true);
+    socket.emit("admin:reveal_results", {}, (res) => {
+      setResultsBusy(false);
+      if (res.success) {
+        setLastEvent(`Final results revealed (top ${winnerCount}).`);
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to reveal results"}`);
+      }
+    });
+  };
+
+  const hideResults = () => {
+    if (!socket || resultsBusy) return;
+    setResultsBusy(true);
+    socket.emit("admin:hide_results", {}, (res) => {
+      setResultsBusy(false);
+      if (res.success) {
+        setLastEvent("Back to live scoreboard.");
+      } else {
+        setLastEvent(`Error: ${res.error || "Failed to hide results"}`);
+      }
+    });
+  };
+
   const startTaskTimer = (duration?: number) => {
     if (!socket || taskTimerBusy) return;
     setTaskTimerBusy(true);
@@ -757,7 +793,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
           {/* Question selection status */}
           <div style={{
-            padding: "10px 14px", borderRadius: "8px", marginBottom: "16px",
+            padding: "10px 14px", borderRadius: "0.75rem", marginBottom: "16px",
             backgroundColor: (phaseQuestion || selectedQuestionId) ? `${C.success}10` : `${C.danger}10`,
             border: `1px solid ${(phaseQuestion || selectedQuestionId) ? C.success : C.danger}`,
             fontSize: "0.85rem",
@@ -834,7 +870,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
               style={{
                 width: "100%",
                 padding: "8px 10px",
-                borderRadius: "6px",
+                borderRadius: "0.625rem",
                 border: `1px solid ${C.border}`,
                 backgroundColor: C.surface,
                 color: C.text,
@@ -853,7 +889,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
             !hasWinner ? (
               <div style={{
                 padding: "8px 10px",
-                borderRadius: "6px",
+                borderRadius: "0.625rem",
                 backgroundColor: `${C.danger}18`,
                 border: `1px solid ${C.danger}50`,
                 color: C.danger,
@@ -870,7 +906,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
             ) : (
               <div style={{
                 padding: "8px 10px",
-                borderRadius: "6px",
+                borderRadius: "0.625rem",
                 backgroundColor: `${C.success}15`,
                 border: `1px solid ${C.success}40`,
                 color: C.success,
@@ -884,7 +920,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           ) : (
             <div style={{
               padding: "8px 10px",
-              borderRadius: "6px",
+              borderRadius: "0.625rem",
               backgroundColor: `${C.accent}15`,
               border: `1px solid ${C.accent}40`,
               color: C.accent,
@@ -1022,7 +1058,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   disabled={taskTimerBusy || extraTimerBusy}
                   style={{
                     ...styles.timerCtrlBtn,
-                    backgroundColor: C.danger,
+                    background: "linear-gradient(180deg, #F87171, #EF4444)",
                   }}
                 >
                   Stop
@@ -1070,7 +1106,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     {isSelected && (
                       <div style={{
                         fontSize: "0.65rem", fontWeight: 800, color: "#fff",
-                        backgroundColor: C.success, padding: "2px 8px", borderRadius: "4px", marginTop: "4px",
+                        background: "linear-gradient(180deg, #4ADE80, #22C55E)", padding: "2px 8px", borderRadius: "999px", marginTop: "4px",
                       }}>
                         SELECTED
                       </div>
@@ -1078,7 +1114,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     {q.used && !isSelected && (
                       <div style={{
                         fontSize: "0.65rem", fontWeight: 700, color: C.accent,
-                        backgroundColor: `${C.accent}20`, padding: "2px 6px", borderRadius: "4px", marginTop: "4px",
+                        backgroundColor: `${C.accent}20`, padding: "2px 6px", borderRadius: "999px", marginTop: "4px",
                       }}>
                         USED
                       </div>
@@ -1178,7 +1214,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                       <button
                         onClick={() => socket?.emit("sound:play", { type })}
                         style={{
-                          padding: "4px 12px", borderRadius: "8px", cursor: "pointer",
+                          padding: "4px 12px", borderRadius: "0.75rem", cursor: "pointer",
                           border: `1px solid ${C.accent}`, backgroundColor: `${C.accent}15`,
                           color: C.text, fontSize: "0.75rem", fontWeight: 700,
                         }}
@@ -1262,6 +1298,425 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           )}
         </Card>
 
+        {/* Row 3: Task Control (6) + Scoreboard (6) */}
+        <Card title="Task Control & Resolution" span={6}>
+          {phase === "post_bid_idle" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  {phaseWinner?.teamName || "Winning Team"}
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.accent}20`, color: C.accent, border: `1px solid ${C.accent}` }}>
+                  AUCTION WON · STANDBY
+                </span>
+              </div>
+
+              {phaseQuestion && (
+                <div style={{ fontSize: "0.875rem", color: C.muted, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                  <span>Question: <strong>{phaseQuestion.id}</strong></span>
+                  <span>Reward: <strong>{phaseQuestion.reward} pts</strong></span>
+                  <span>Winning Bid: <strong>{phaseBid ?? currentBid} coins</strong> (deducted)</span>
+                </div>
+              )}
+
+              <div style={{
+                padding: "10px 14px", borderRadius: "0.75rem",
+                backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
+                fontSize: "0.85rem", color: C.text,
+              }}>
+                Coins have been deducted from <strong>{phaseWinner?.teamName || "winner"}</strong>. Task timers are controlled from the <strong>Manual Timer Control</strong> panel above. Verdicts can be submitted directly below at any time.
+              </div>
+
+              {/* Direct Verdict Options */}
+              <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
+                <button
+                  onClick={passTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.8rem", borderRadius: "1rem",
+                    border: "none", background: "linear-gradient(180deg, #4ADE80, #22C55E)", color: C.bg,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  PASS (Direct Pass, +{phaseQuestion?.reward ?? 100} pts)
+                </button>
+                <button
+                  onClick={failTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.8rem", borderRadius: "1rem",
+                    border: "none", background: "linear-gradient(180deg, #F87171, #EF4444)", color: C.bg,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  FAIL (Direct Fail, 0 pts)
+                </button>
+                <button
+                  onClick={triggerFailWithFallback}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.8rem", borderRadius: "1rem",
+                    border: `1.5px solid ${C.accent}`, backgroundColor: `${C.accent}15`, color: C.accent,
+                    fontSize: "0.95rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  Fail Winner → Open Fallback Round
+                </button>
+              </div>
+            </div>
+          ) : phase === "main_task" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  {phaseWinner?.teamName || "Winning Team"}
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.primary}20`, color: C.primary, border: `1px solid ${C.primary}` }}>
+                  MAIN TASK ACTIVE
+                </span>
+              </div>
+
+              {phaseQuestion && (
+                <div style={{ fontSize: "0.875rem", color: C.muted, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                  <span>Question: <strong>{phaseQuestion.id}</strong></span>
+                  <span>Reward: <strong>{phaseQuestion.reward} pts</strong></span>
+                  <span>Time Limit: <strong>{phaseQuestion.time}s</strong></span>
+                </div>
+              )}
+
+              <div style={{
+                padding: "8px 12px", borderRadius: "0.625rem",
+                backgroundColor: `${C.primary}10`, border: `1px solid ${C.primary}30`,
+                fontSize: "0.82rem", color: C.text,
+              }}>
+                Task timer is managed via the <strong>Manual Timer Control</strong> panel above. Verdicts can be issued at any time independently of any timer.
+              </div>
+
+              {/* Verdict Section */}
+              <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column", marginTop: "0.5rem" }}>
+                <button
+                  onClick={passTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.875rem", borderRadius: "1rem",
+                    border: "none", background: "linear-gradient(180deg, #4ADE80, #22C55E)", color: C.bg,
+                    fontSize: "1.05rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  PASS (+{phaseQuestion?.reward ?? 100} pts to {phaseWinner?.teamName || "Winner"})
+                </button>
+
+                <button
+                  onClick={failTask}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.875rem", borderRadius: "1rem",
+                    border: "none", background: "linear-gradient(180deg, #F87171, #EF4444)", color: C.bg,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  Direct FAIL (0 pts, End Round)
+                </button>
+
+                <button
+                  onClick={triggerFailWithFallback}
+                  disabled={taskPending}
+                  style={{
+                    width: "100%", padding: "0.875rem", borderRadius: "1rem",
+                    border: `1.5px solid ${C.accent}`, backgroundColor: `${C.accent}15`, color: C.accent,
+                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
+                    opacity: taskPending ? 0.6 : 1,
+                  }}
+                >
+                  FAIL Winner → Open Fallback Round
+                </button>
+              </div>
+            </div>
+          ) : phase === "fallback_idle" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  FALLBACK ROUND (STANDBY)
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.danger}20`, color: C.danger, border: `1px solid ${C.danger}` }}>
+                  WINNER FAILED (0 PTS)
+                </span>
+              </div>
+
+              <div style={{
+                padding: "10px 14px", borderRadius: "0.75rem",
+                backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}40`,
+                fontSize: "0.85rem", color: C.text,
+              }}>
+                Primary team {phaseWinner?.teamName ? `(${phaseWinner.teamName})` : ""} failed. Fallback is open to other teams. If a countdown is needed on the Live Display, start an Extra Timer using the <strong>Manual Timer Control</strong> panel above.
+              </div>
+
+              {/* Fallback Team Selection & Award */}
+              <div style={{
+                padding: "1rem", borderRadius: "1rem",
+                backgroundColor: C.surface, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.75rem",
+              }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.text }}>
+                  Award Fallback to Solving Team
+                </span>
+                <select
+                  value={fallbackTeamId}
+                  onChange={(e) => setFallbackTeamId(e.target.value)}
+                  disabled={fallbackBusy}
+                  style={{
+                    width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.75rem",
+                    border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <option value="">-- Select team who solved --</option>
+                  {scoreboard
+                    .filter((t) => t.teamId !== phaseWinner?.teamId)
+                    .map((t) => (
+                      <option key={t.teamId} value={t.teamId}>
+                        {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  onClick={submitFallbackPass}
+                  disabled={!fallbackTeamId || fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.75rem", border: "none",
+                    background: "linear-gradient(180deg, #4ADE80, #22C55E)", color: C.bg, fontWeight: 800, fontSize: "0.95rem",
+                    cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
+                    opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
+                  }}
+                >
+                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                </button>
+
+                <button
+                  onClick={submitFallbackFail}
+                  disabled={fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.75rem",
+                    border: `1px solid ${C.border}`, backgroundColor: "transparent", color: C.text,
+                    fontWeight: 700, fontSize: "0.9rem", cursor: fallbackBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  No Team Solved (End Fallback with 0 pts)
+                </button>
+              </div>
+            </div>
+          ) : phase === "fallback_active" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
+                  FALLBACK IN PROGRESS
+                </span>
+                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.accent}20`, color: C.accent, border: `1px solid ${C.accent}` }}>
+                  EXTRA TIMER RUNNING
+                </span>
+              </div>
+
+              <div style={{
+                padding: "8px 12px", borderRadius: "0.625rem",
+                backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
+                fontSize: "0.82rem", color: C.text,
+              }}>
+                Fallback timer is running on Live Display and managed via the <strong>Manual Timer Control</strong> panel above. Award fallback points below when a team solves.
+              </div>
+
+              {/* Fallback Award / Fail */}
+              <div style={{
+                padding: "1rem", borderRadius: "1rem",
+                backgroundColor: C.surface, border: `1px solid ${C.border}`,
+                display: "flex", flexDirection: "column", gap: "0.75rem",
+              }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.text }}>
+                  Award Fallback to Solving Team
+                </span>
+                <select
+                  value={fallbackTeamId}
+                  onChange={(e) => setFallbackTeamId(e.target.value)}
+                  disabled={fallbackBusy}
+                  style={{
+                    width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.75rem",
+                    border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <option value="">-- Select team who solved --</option>
+                  {scoreboard
+                    .filter((t) => t.teamId !== phaseWinner?.teamId)
+                    .map((t) => (
+                      <option key={t.teamId} value={t.teamId}>
+                        {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  onClick={submitFallbackPass}
+                  disabled={!fallbackTeamId || fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.75rem", border: "none",
+                    background: "linear-gradient(180deg, #4ADE80, #22C55E)", color: C.bg, fontWeight: 800, fontSize: "0.95rem",
+                    cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
+                    opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
+                  }}
+                >
+                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                </button>
+
+                <button
+                  onClick={submitFallbackFail}
+                  disabled={fallbackBusy}
+                  style={{
+                    padding: "0.75rem", borderRadius: "0.75rem",
+                    border: `1px solid ${C.border}`, backgroundColor: "transparent", color: C.text,
+                    fontWeight: 700, fontSize: "0.9rem", cursor: fallbackBusy ? "not-allowed" : "pointer",
+                  }}
+                >
+                  No Team Solved (End Fallback with 0 pts)
+                </button>
+              </div>
+            </div>
+          ) : phase === "result_display" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1.5rem" }}>
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, color: C.success }}>
+                RESULT DISPLAY LOCKED (5.0s)
+              </div>
+              <div style={{ fontSize: "0.9rem", color: C.muted }}>
+                Verdict is currently displayed on all screens. The system will automatically reset to idle in 5 seconds.
+              </div>
+              <button
+                onClick={endRound}
+                disabled={endRoundBusy}
+                style={{
+                  ...styles.startBtn,
+                  background: `linear-gradient(180deg, ${C.primaryLight}, ${C.primary})`,
+                  marginTop: "0.5rem",
+                }}
+              >
+                Force Reset Now (Bypass 5s)
+              </button>
+            </div>
+          ) : phase === "ended" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1rem" }}>
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, color: C.text }}>
+                Round Completed
+              </div>
+              <div style={{ fontSize: "0.9rem", color: C.muted }}>
+                {phaseWinner
+                  ? `Winner: ${phaseWinner.teamName} · Final Bid: ${phaseBid ?? 0} coins`
+                  : "No winner for this round."}
+              </div>
+              <button
+                onClick={endRound}
+                disabled={endRoundBusy}
+                style={{
+                  ...styles.startBtn,
+                  background: `linear-gradient(180deg, ${C.primaryLight}, ${C.primary})`,
+                  marginTop: "0.5rem",
+                }}
+              >
+                Reset & Prepare Next Auction
+              </button>
+            </div>
+          ) : phase === "bidding" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", textAlign: "center", padding: "1.5rem 0" }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Auction In Progress
+              </span>
+              <div style={{ ...styles.taskTimer, color: C.accent }}>
+                {formatClock((biddingTimer ? biddingTimer.remaining : timer) ?? 0)}
+              </div>
+              <div style={{ fontSize: "0.85rem", color: C.muted }}>
+                Auction timer is running. On win, coins will be deducted and round will wait for admin to start task timer.
+              </div>
+            </div>
+          ) : (
+            <div style={styles.empty}>
+              No active task. Select a question above and click "Start Auction (60s)".
+            </div>
+          )}
+        </Card>
+
+        <Card title="Scoreboard" span={6} scroll>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: "12px", padding: "10px 14px", marginBottom: "14px",
+            borderRadius: "0.75rem", backgroundColor: resultsRevealed ? `${C.accent}18` : C.bg,
+            border: resultsRevealed ? `1.5px solid ${C.accent}` : "none",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Winners
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <button
+                  onClick={() => setWinnerCountValue(winnerCount - 1)}
+                  disabled={winnerCount <= 1}
+                  style={{
+                    width: "26px", height: "26px", borderRadius: "999px", border: `1px solid ${C.border}`,
+                    backgroundColor: C.surface, color: C.text, fontWeight: 700, cursor: winnerCount <= 1 ? "not-allowed" : "pointer",
+                    opacity: winnerCount <= 1 ? 0.4 : 1,
+                  }}
+                >
+                  −
+                </button>
+                <span style={{ minWidth: "24px", textAlign: "center", fontWeight: 800, color: C.primary, fontSize: "1rem" }}>
+                  {winnerCount}
+                </span>
+                <button
+                  onClick={() => setWinnerCountValue(winnerCount + 1)}
+                  disabled={winnerCount >= 10}
+                  style={{
+                    width: "26px", height: "26px", borderRadius: "999px", border: `1px solid ${C.border}`,
+                    backgroundColor: C.surface, color: C.text, fontWeight: 700, cursor: winnerCount >= 10 ? "not-allowed" : "pointer",
+                    opacity: winnerCount >= 10 ? 0.4 : 1,
+                  }}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={resultsRevealed ? hideResults : revealResults}
+              disabled={resultsBusy}
+              style={{
+                padding: "8px 16px", borderRadius: "0.75rem", border: "none",
+                background: resultsRevealed
+                  ? "linear-gradient(180deg, #94A3B8, #64748B)"
+                  : `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`,
+                color: resultsRevealed ? "#fff" : C.primaryDark,
+                fontWeight: 800, fontSize: "0.8rem", cursor: resultsBusy ? "not-allowed" : "pointer",
+                opacity: resultsBusy ? 0.6 : 1, whiteSpace: "nowrap",
+              }}
+            >
+              {resultsRevealed ? "Back to Live" : "Reveal Final Results"}
+            </button>
+          </div>
+          <div style={styles.scoreTable}>
+            <div style={styles.tableHeader}>
+              <span style={styles.colRank}>#</span><span style={styles.colName}>Team</span><span style={styles.colCoins}>Coins</span><span style={styles.colPoints}>Points</span><span style={styles.colBids}>Bids</span>
+            </div>
+            {scoreboard.map((t, i) => (
+              <div key={t.teamId} style={{ ...styles.tableRow, backgroundColor: i % 2 === 0 ? C.surface : C.bg }}>
+                <span style={styles.colRank}>{i + 1}</span>
+                <span style={styles.colName}>{t.teamName}</span>
+                <span style={{ ...styles.colCoins, color: t.bid_coins < 200 ? C.danger : C.accent }}>{t.bid_coins}</span>
+                <span style={{ ...styles.colPoints, color: C.info }}>{t.reward_points}</span>
+                <span style={{ ...styles.colBids, color: C.muted }}>{t.totalBids}</span>
+              </div>
+            ))}
+            {scoreboard.length === 0 && <div style={styles.empty}>No teams registered yet</div>}
+          </div>
+        </Card>
+
         <Card title="Data Management" span={12}>
           {/* Collapsible Header */}
           <div
@@ -1326,7 +1781,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                         });
                     }}
                     style={{
-                      padding: "8px 16px", borderRadius: "6px",
+                      padding: "8px 16px", borderRadius: "0.625rem",
                       border: `1px solid ${C.border}`, backgroundColor: C.surface,
                       cursor: "pointer", fontFamily: F.body, fontWeight: 600,
                       fontSize: "0.8rem", color: C.text,
@@ -1337,7 +1792,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
                   {poolStats && (
                     <div style={{
-                      padding: "6px 14px", borderRadius: "6px",
+                      padding: "6px 14px", borderRadius: "0.625rem",
                       backgroundColor: `${C.accent}15`, border: `1px solid ${C.accent}40`,
                       fontFamily: F.mono, fontSize: "0.8rem", color: C.accent, fontWeight: 700,
                     }}>
@@ -1350,7 +1805,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   onClick={() => setResetPoolConfirm(true)}
                   disabled={dataBusy}
                   style={{
-                    padding: "8px 14px", borderRadius: "6px",
+                    padding: "8px 14px", borderRadius: "0.625rem",
                     border: `1px solid ${C.border}`, backgroundColor: `${C.danger}15`,
                     cursor: dataBusy ? "not-allowed" : "pointer", fontFamily: F.body, fontWeight: 600,
                     fontSize: "0.8rem", color: C.danger,
@@ -1433,7 +1888,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                                   onClick={() => setDataConfirm({ teamId: team.teamId, teamName: team.teamName })}
                                   disabled={!edit || dataBusy}
                                   style={{
-                                    padding: "5px 12px", borderRadius: "4px",
+                                    padding: "5px 12px", borderRadius: "999px",
                                     border: "none",
                                     backgroundColor: edit ? C.success : C.border,
                                     color: edit ? "#fff" : C.muted,
@@ -1450,9 +1905,9 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                                   onClick={() => setDeleteConfirm({ teamId: team.teamId, teamName: team.teamName })}
                                   disabled={dataBusy}
                                   style={{
-                                    padding: "5px 10px", borderRadius: "4px",
+                                    padding: "5px 10px", borderRadius: "999px",
                                     border: "none",
-                                    backgroundColor: C.danger,
+                                    background: "linear-gradient(180deg, #F87171, #EF4444)",
                                     color: "#fff",
                                     cursor: dataBusy ? "not-allowed" : "pointer",
                                     fontWeight: 600, fontSize: "0.75rem",
@@ -1488,7 +1943,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   });
                 }}
                 style={{
-                  flex: 1, padding: "12px 16px", borderRadius: "8px",
+                  flex: 1, padding: "12px 16px", borderRadius: "0.75rem",
                   border: `2px solid ${C.border}`,
                   backgroundColor: C.surface,
                   cursor: "pointer", transition: "all 0.2s ease",
@@ -1502,7 +1957,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           </div>
         </Card>
 
-        <Card title="Team Management" span={4} scroll>
+        <Card title="Team Management" span={8} scroll>
           <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Edit bid coins and reward points. Changes persist to the database.</p>
           {scoreboard.length === 0 ? (
             <div style={styles.empty}>No teams to manage</div>
@@ -1531,370 +1986,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
           )}
         </Card>
 
-        {/* Row 3: Task Control (6) + Scoreboard (6) */}
-        <Card title="Task Control & Resolution" span={6}>
-          {phase === "post_bid_idle" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
-                  {phaseWinner?.teamName || "Winning Team"}
-                </span>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.accent}20`, color: C.accent, border: `1px solid ${C.accent}` }}>
-                  AUCTION WON · STANDBY
-                </span>
-              </div>
-
-              {phaseQuestion && (
-                <div style={{ fontSize: "0.875rem", color: C.muted, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                  <span>Question: <strong>{phaseQuestion.id}</strong></span>
-                  <span>Reward: <strong>{phaseQuestion.reward} pts</strong></span>
-                  <span>Winning Bid: <strong>{phaseBid ?? currentBid} coins</strong> (deducted)</span>
-                </div>
-              )}
-
-              <div style={{
-                padding: "10px 14px", borderRadius: "8px",
-                backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
-                fontSize: "0.85rem", color: C.text,
-              }}>
-                Coins have been deducted from <strong>{phaseWinner?.teamName || "winner"}</strong>. Task timers are controlled from the <strong>Manual Timer Control</strong> panel above. Verdicts can be submitted directly below at any time.
-              </div>
-
-              {/* Direct Verdict Options */}
-              <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column" }}>
-                <button
-                  onClick={passTask}
-                  disabled={taskPending}
-                  style={{
-                    width: "100%", padding: "0.8rem", borderRadius: "0.75rem",
-                    border: "none", backgroundColor: C.success, color: C.bg,
-                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
-                    opacity: taskPending ? 0.6 : 1,
-                  }}
-                >
-                  PASS (Direct Pass, +{phaseQuestion?.reward ?? 100} pts)
-                </button>
-                <button
-                  onClick={failTask}
-                  disabled={taskPending}
-                  style={{
-                    width: "100%", padding: "0.8rem", borderRadius: "0.75rem",
-                    border: "none", backgroundColor: C.danger, color: C.bg,
-                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
-                    opacity: taskPending ? 0.6 : 1,
-                  }}
-                >
-                  FAIL (Direct Fail, 0 pts)
-                </button>
-                <button
-                  onClick={triggerFailWithFallback}
-                  disabled={taskPending}
-                  style={{
-                    width: "100%", padding: "0.8rem", borderRadius: "0.75rem",
-                    border: `1.5px solid ${C.accent}`, backgroundColor: `${C.accent}15`, color: C.accent,
-                    fontSize: "0.95rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
-                    opacity: taskPending ? 0.6 : 1,
-                  }}
-                >
-                  Fail Winner → Open Fallback Round
-                </button>
-              </div>
-            </div>
-          ) : phase === "main_task" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
-                  {phaseWinner?.teamName || "Winning Team"}
-                </span>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.primary}20`, color: C.primary, border: `1px solid ${C.primary}` }}>
-                  MAIN TASK ACTIVE
-                </span>
-              </div>
-
-              {phaseQuestion && (
-                <div style={{ fontSize: "0.875rem", color: C.muted, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                  <span>Question: <strong>{phaseQuestion.id}</strong></span>
-                  <span>Reward: <strong>{phaseQuestion.reward} pts</strong></span>
-                  <span>Time Limit: <strong>{phaseQuestion.time}s</strong></span>
-                </div>
-              )}
-
-              <div style={{
-                padding: "8px 12px", borderRadius: "6px",
-                backgroundColor: `${C.primary}10`, border: `1px solid ${C.primary}30`,
-                fontSize: "0.82rem", color: C.text,
-              }}>
-                Task timer is managed via the <strong>Manual Timer Control</strong> panel above. Verdicts can be issued at any time independently of any timer.
-              </div>
-
-              {/* Verdict Section */}
-              <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column", marginTop: "0.5rem" }}>
-                <button
-                  onClick={passTask}
-                  disabled={taskPending}
-                  style={{
-                    width: "100%", padding: "0.875rem", borderRadius: "0.75rem",
-                    border: "none", backgroundColor: C.success, color: C.bg,
-                    fontSize: "1.05rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
-                    opacity: taskPending ? 0.6 : 1,
-                  }}
-                >
-                  PASS (+{phaseQuestion?.reward ?? 100} pts to {phaseWinner?.teamName || "Winner"})
-                </button>
-
-                <button
-                  onClick={failTask}
-                  disabled={taskPending}
-                  style={{
-                    width: "100%", padding: "0.875rem", borderRadius: "0.75rem",
-                    border: "none", backgroundColor: C.danger, color: C.bg,
-                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
-                    opacity: taskPending ? 0.6 : 1,
-                  }}
-                >
-                  Direct FAIL (0 pts, End Round)
-                </button>
-
-                <button
-                  onClick={triggerFailWithFallback}
-                  disabled={taskPending}
-                  style={{
-                    width: "100%", padding: "0.875rem", borderRadius: "0.75rem",
-                    border: `1.5px solid ${C.accent}`, backgroundColor: `${C.accent}15`, color: C.accent,
-                    fontSize: "1rem", fontWeight: 800, cursor: taskPending ? "not-allowed" : "pointer",
-                    opacity: taskPending ? 0.6 : 1,
-                  }}
-                >
-                  FAIL Winner → Open Fallback Round
-                </button>
-              </div>
-            </div>
-          ) : phase === "fallback_idle" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
-                  FALLBACK ROUND (STANDBY)
-                </span>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.danger}20`, color: C.danger, border: `1px solid ${C.danger}` }}>
-                  WINNER FAILED (0 PTS)
-                </span>
-              </div>
-
-              <div style={{
-                padding: "10px 14px", borderRadius: "8px",
-                backgroundColor: `${C.accent}10`, border: `1px solid ${C.accent}40`,
-                fontSize: "0.85rem", color: C.text,
-              }}>
-                Primary team {phaseWinner?.teamName ? `(${phaseWinner.teamName})` : ""} failed. Fallback is open to other teams. If a countdown is needed on the Live Display, start an Extra Timer using the <strong>Manual Timer Control</strong> panel above.
-              </div>
-
-              {/* Fallback Team Selection & Award */}
-              <div style={{
-                padding: "1rem", borderRadius: "0.75rem",
-                backgroundColor: C.surface, border: `1px solid ${C.border}`,
-                display: "flex", flexDirection: "column", gap: "0.75rem",
-              }}>
-                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.text }}>
-                  Award Fallback to Solving Team
-                </span>
-                <select
-                  value={fallbackTeamId}
-                  onChange={(e) => setFallbackTeamId(e.target.value)}
-                  disabled={fallbackBusy}
-                  style={{
-                    width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.5rem",
-                    border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
-                    fontSize: "0.9rem",
-                  }}
-                >
-                  <option value="">-- Select team who solved --</option>
-                  {scoreboard
-                    .filter((t) => t.teamId !== phaseWinner?.teamId)
-                    .map((t) => (
-                      <option key={t.teamId} value={t.teamId}>
-                        {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
-                      </option>
-                    ))}
-                </select>
-
-                <button
-                  onClick={submitFallbackPass}
-                  disabled={!fallbackTeamId || fallbackBusy}
-                  style={{
-                    padding: "0.75rem", borderRadius: "0.5rem", border: "none",
-                    backgroundColor: C.success, color: C.bg, fontWeight: 800, fontSize: "0.95rem",
-                    cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
-                    opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
-                  }}
-                >
-                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
-                </button>
-
-                <button
-                  onClick={submitFallbackFail}
-                  disabled={fallbackBusy}
-                  style={{
-                    padding: "0.75rem", borderRadius: "0.5rem",
-                    border: `1px solid ${C.border}`, backgroundColor: "transparent", color: C.text,
-                    fontWeight: 700, fontSize: "0.9rem", cursor: fallbackBusy ? "not-allowed" : "pointer",
-                  }}
-                >
-                  No Team Solved (End Fallback with 0 pts)
-                </button>
-              </div>
-            </div>
-          ) : phase === "fallback_active" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "1.25rem", fontWeight: 800, color: C.accent }}>
-                  FALLBACK IN PROGRESS
-                </span>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "4px 10px", borderRadius: "999px", backgroundColor: `${C.accent}20`, color: C.accent, border: `1px solid ${C.accent}` }}>
-                  EXTRA TIMER RUNNING
-                </span>
-              </div>
-
-              <div style={{
-                padding: "8px 12px", borderRadius: "6px",
-                backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}40`,
-                fontSize: "0.82rem", color: C.text,
-              }}>
-                Fallback timer is running on Live Display and managed via the <strong>Manual Timer Control</strong> panel above. Award fallback points below when a team solves.
-              </div>
-
-              {/* Fallback Award / Fail */}
-              <div style={{
-                padding: "1rem", borderRadius: "0.75rem",
-                backgroundColor: C.surface, border: `1px solid ${C.border}`,
-                display: "flex", flexDirection: "column", gap: "0.75rem",
-              }}>
-                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: C.text }}>
-                  Award Fallback to Solving Team
-                </span>
-                <select
-                  value={fallbackTeamId}
-                  onChange={(e) => setFallbackTeamId(e.target.value)}
-                  disabled={fallbackBusy}
-                  style={{
-                    width: "100%", padding: "0.6rem 0.75rem", borderRadius: "0.5rem",
-                    border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
-                    fontSize: "0.9rem",
-                  }}
-                >
-                  <option value="">-- Select team who solved --</option>
-                  {scoreboard
-                    .filter((t) => t.teamId !== phaseWinner?.teamId)
-                    .map((t) => (
-                      <option key={t.teamId} value={t.teamId}>
-                        {t.teamName} (Points: {t.reward_points}, Coins: {t.bid_coins})
-                      </option>
-                    ))}
-                </select>
-
-                <button
-                  onClick={submitFallbackPass}
-                  disabled={!fallbackTeamId || fallbackBusy}
-                  style={{
-                    padding: "0.75rem", borderRadius: "0.5rem", border: "none",
-                    backgroundColor: C.success, color: C.bg, fontWeight: 800, fontSize: "0.95rem",
-                    cursor: !fallbackTeamId || fallbackBusy ? "not-allowed" : "pointer",
-                    opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
-                  }}
-                >
-                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
-                </button>
-
-                <button
-                  onClick={submitFallbackFail}
-                  disabled={fallbackBusy}
-                  style={{
-                    padding: "0.75rem", borderRadius: "0.5rem",
-                    border: `1px solid ${C.border}`, backgroundColor: "transparent", color: C.text,
-                    fontWeight: 700, fontSize: "0.9rem", cursor: fallbackBusy ? "not-allowed" : "pointer",
-                  }}
-                >
-                  No Team Solved (End Fallback with 0 pts)
-                </button>
-              </div>
-            </div>
-          ) : phase === "result_display" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1.5rem" }}>
-              <div style={{ fontSize: "1.2rem", fontWeight: 800, color: C.success }}>
-                RESULT DISPLAY LOCKED (5.0s)
-              </div>
-              <div style={{ fontSize: "0.9rem", color: C.muted }}>
-                Verdict is currently displayed on all screens. The system will automatically reset to idle in 5 seconds.
-              </div>
-              <button
-                onClick={endRound}
-                disabled={endRoundBusy}
-                style={{
-                  ...styles.startBtn,
-                  backgroundColor: C.primary,
-                  marginTop: "0.5rem",
-                }}
-              >
-                Force Reset Now (Bypass 5s)
-              </button>
-            </div>
-          ) : phase === "ended" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", textAlign: "center", padding: "1rem" }}>
-              <div style={{ fontSize: "1.2rem", fontWeight: 800, color: C.text }}>
-                Round Completed
-              </div>
-              <div style={{ fontSize: "0.9rem", color: C.muted }}>
-                {phaseWinner
-                  ? `Winner: ${phaseWinner.teamName} · Final Bid: ${phaseBid ?? 0} coins`
-                  : "No winner for this round."}
-              </div>
-              <button
-                onClick={endRound}
-                disabled={endRoundBusy}
-                style={{
-                  ...styles.startBtn,
-                  backgroundColor: C.primary,
-                  marginTop: "0.5rem",
-                }}
-              >
-                Reset & Prepare Next Auction
-              </button>
-            </div>
-          ) : phase === "bidding" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", textAlign: "center", padding: "1.5rem 0" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                Auction In Progress
-              </span>
-              <div style={{ ...styles.taskTimer, color: C.accent }}>
-                {formatClock((biddingTimer ? biddingTimer.remaining : timer) ?? 0)}
-              </div>
-              <div style={{ fontSize: "0.85rem", color: C.muted }}>
-                Auction timer is running. On win, coins will be deducted and round will wait for admin to start task timer.
-              </div>
-            </div>
-          ) : (
-            <div style={styles.empty}>
-              No active task. Select a question above and click "Start Auction (60s)".
-            </div>
-          )}
-        </Card>
-
-        <Card title="Scoreboard" span={6} scroll>
-          <div style={styles.scoreTable}>
-            <div style={styles.tableHeader}>
-              <span style={styles.colRank}>#</span><span style={styles.colName}>Team</span><span style={styles.colCoins}>Coins</span><span style={styles.colPoints}>Points</span><span style={styles.colBids}>Bids</span>
-            </div>
-            {scoreboard.map((t, i) => (
-              <div key={t.teamId} style={{ ...styles.tableRow, backgroundColor: i % 2 === 0 ? C.surface : C.bg }}>
-                <span style={styles.colRank}>{i + 1}</span>
-                <span style={styles.colName}>{t.teamName}</span>
-                <span style={{ ...styles.colCoins, color: t.bid_coins < 200 ? C.danger : C.accent }}>{t.bid_coins}</span>
-                <span style={{ ...styles.colPoints, color: C.info }}>{t.reward_points}</span>
-                <span style={{ ...styles.colBids, color: C.muted }}>{t.totalBids}</span>
-              </div>
-            ))}
-            {scoreboard.length === 0 && <div style={styles.empty}>No teams registered yet</div>}
-          </div>
-        </Card>
       </div>
 
       {/* Team update confirmation modal */}
@@ -1994,7 +2085,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
               <button
                 onClick={() => handleDeleteTeam(deleteConfirm.teamId)}
                 disabled={dataBusy}
-                style={{ ...styles.modalConfirmBtn, backgroundColor: C.danger }}
+                style={{ ...styles.modalConfirmBtn, background: "linear-gradient(180deg, #F87171, #EF4444)" }}
               >
                 {dataBusy ? "Deleting…" : "Yes, Delete"}
               </button>
@@ -2039,7 +2130,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   });
                 }}
                 disabled={dataBusy}
-                style={{ ...styles.modalConfirmBtn, backgroundColor: C.accent, color: C.bg }}
+                style={{ ...styles.modalConfirmBtn, background: `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`, color: C.bg }}
               >
                 {dataBusy ? "Resetting…" : "Confirm Reset"}
               </button>
@@ -2110,7 +2201,7 @@ const styles: Record<string, React.CSSProperties> = {
   keyInput: {
     width: "100%",
     padding: "0.75rem 1rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2147,7 +2238,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modeSelect: {
     padding: "0.5rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2155,7 +2246,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   importBtn: {
     padding: "0.5rem 1rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
     backgroundColor: C.info,
     color: C.bg,
@@ -2166,7 +2257,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   selectedBox: {
     padding: "0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     backgroundColor: C.bg,
     border: `1px solid ${C.success}`,
     color: C.text,
@@ -2193,7 +2284,7 @@ const styles: Record<string, React.CSSProperties> = {
   ddSelect: {
     width: "100%",
     padding: "0.75rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2209,9 +2300,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   qSelectBtn: {
     padding: "0.375rem 0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: C.success,
+    background: "linear-gradient(180deg, #4ADE80, #22C55E)",
     color: C.bg,
     fontSize: "0.875rem",
     fontWeight: "bold",
@@ -2220,9 +2311,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   qConfirmBtn: {
     padding: "0.375rem 0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: C.accent,
+    background: `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`,
     color: C.bg,
     fontSize: "0.875rem",
     fontWeight: "bold",
@@ -2232,9 +2323,9 @@ const styles: Record<string, React.CSSProperties> = {
   useQuestionBtn: {
     width: "100%",
     padding: "0.85rem 1.5rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: "none",
-    backgroundColor: C.success,
+    background: "linear-gradient(180deg, #4ADE80, #22C55E)",
     color: C.bg,
     fontSize: "1.1rem",
     fontWeight: 800,
@@ -2249,7 +2340,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "0.75rem",
     marginTop: "1rem",
     padding: "1rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     backgroundColor: C.bg,
     border: `1px solid ${C.border}`,
   },
@@ -2304,7 +2395,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   bankWarning: {
     padding: "0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     backgroundColor: C.bg,
     border: `1px solid ${C.danger}`,
     color: C.danger,
@@ -2337,7 +2428,7 @@ const styles: Record<string, React.CSSProperties> = {
   timerBtn: {
     flex: 1,
     padding: "0.6rem 0.25rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2359,7 +2450,7 @@ const styles: Record<string, React.CSSProperties> = {
   rewardInput: {
     width: "5rem",
     padding: "0.75rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2371,9 +2462,9 @@ const styles: Record<string, React.CSSProperties> = {
   passBtn: {
     flex: 1,
     padding: "0.75rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: "none",
-    backgroundColor: C.success,
+    background: "linear-gradient(180deg, #4ADE80, #22C55E)",
     color: C.bg,
     fontSize: "1.125rem",
     fontWeight: "bold",
@@ -2382,9 +2473,9 @@ const styles: Record<string, React.CSSProperties> = {
   failBtn: {
     width: "100%",
     padding: "0.75rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: "none",
-    backgroundColor: C.danger,
+    background: "linear-gradient(180deg, #F87171, #EF4444)",
     color: C.bg,
     fontSize: "1.125rem",
     fontWeight: "bold",
@@ -2404,7 +2495,7 @@ const styles: Record<string, React.CSSProperties> = {
   cancelBtn: {
     width: "100%",
     padding: "0.5rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: `1px solid ${C.border}`,
     backgroundColor: "transparent",
     color: C.muted,
@@ -2414,9 +2505,9 @@ const styles: Record<string, React.CSSProperties> = {
   startBtn: {
     width: "100%",
     padding: "1rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     border: "none",
-    backgroundColor: C.success,
+    background: "linear-gradient(180deg, #4ADE80, #22C55E)",
     color: C.bg,
     fontSize: "1.125rem",
     fontWeight: "bold",
@@ -2464,7 +2555,7 @@ const styles: Record<string, React.CSSProperties> = {
   lastEvent: {
     marginTop: "1rem",
     padding: "0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     backgroundColor: C.bg,
     color: C.muted,
     fontSize: "0.875rem",
@@ -2473,7 +2564,7 @@ const styles: Record<string, React.CSSProperties> = {
   scoreTable: {
     display: "flex",
     flexDirection: "column",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     overflow: "hidden",
   },
   tableHeader: {
@@ -2504,7 +2595,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "10px",
     padding: "0.625rem 1rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     backgroundColor: C.bg,
     color: C.text,
     fontSize: "0.875rem",
@@ -2520,7 +2611,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   authErrorBanner: {
     padding: "1rem 1.25rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     backgroundColor: "rgba(255, 92, 92, 0.15)",
     border: `1px solid ${C.danger}`,
     color: C.danger,
@@ -2542,7 +2633,7 @@ const styles: Record<string, React.CSSProperties> = {
   teamTable: {
     display: "flex",
     flexDirection: "column",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     overflow: "hidden",
     border: `1px solid ${C.border}`,
   },
@@ -2586,7 +2677,7 @@ const styles: Record<string, React.CSSProperties> = {
   tmInput: {
     width: "4.5rem",
     padding: "0.375rem 0.5rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2599,7 +2690,7 @@ const styles: Record<string, React.CSSProperties> = {
   tmApplyBtn: {
     width: "3.5rem",
     padding: "0.375rem 0",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
     backgroundColor: C.info,
     color: C.bg,
@@ -2641,7 +2732,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modalChanges: {
     padding: "0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     backgroundColor: C.bg,
     border: `1px solid ${C.border}`,
     fontSize: "0.9rem",
@@ -2658,9 +2749,9 @@ const styles: Record<string, React.CSSProperties> = {
   modalConfirmBtn: {
     flex: 1,
     padding: "0.65rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: C.success,
+    background: "linear-gradient(180deg, #4ADE80, #22C55E)",
     color: C.bg,
     fontSize: "1rem",
     fontWeight: 700,
@@ -2669,7 +2760,7 @@ const styles: Record<string, React.CSSProperties> = {
   modalCancelBtn: {
     flex: 1,
     padding: "0.65rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: `1px solid ${C.border}`,
     backgroundColor: "transparent",
     color: C.muted,
@@ -2683,7 +2774,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "0.25rem",
     padding: "1rem",
-    borderRadius: "0.75rem",
+    borderRadius: "1rem",
     backgroundColor: C.bg,
     border: `1px solid ${C.border}`,
     marginBottom: "0.75rem",
@@ -2716,7 +2807,7 @@ const styles: Record<string, React.CSSProperties> = {
   timerInput: {
     flex: 1,
     padding: "0.5rem 0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: `1px solid ${C.border}`,
     backgroundColor: C.bg,
     color: C.text,
@@ -2733,7 +2824,7 @@ const styles: Record<string, React.CSSProperties> = {
   timerCtrlBtn: {
     flex: 1,
     padding: "0.6rem 0",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
     color: C.bg,
     fontSize: "0.9rem",
@@ -2753,7 +2844,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     padding: "0.5rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: `2px solid ${C.border}`,
     cursor: "pointer",
     transition: "all 0.15s ease",
@@ -2762,7 +2853,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     height: "60px",
     objectFit: "contain" as const,
-    borderRadius: "0.25rem",
+    borderRadius: "0.5rem",
     marginBottom: "0.25rem",
   },
   imageGridName: {
@@ -2780,7 +2871,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: "0.5rem",
     padding: "0.75rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     backgroundColor: C.bg,
     border: `1px solid ${C.border}`,
     marginTop: "0.5rem",
@@ -2796,14 +2887,14 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "100%",
     maxHeight: "180px",
     objectFit: "contain" as const,
-    borderRadius: "0.25rem",
+    borderRadius: "0.5rem",
   },
   setImageBtn: {
     width: "100%",
     padding: "0.65rem",
-    borderRadius: "0.5rem",
+    borderRadius: "0.75rem",
     border: "none",
-    backgroundColor: C.accent,
+    background: `linear-gradient(180deg, ${C.accentLight}, ${C.accent})`,
     color: C.bg,
     fontSize: "0.9rem",
     fontWeight: 700,
@@ -2846,7 +2937,7 @@ const tableCellStyle: React.CSSProperties = {
 const tableInputStyle: React.CSSProperties = {
   width: "80px",
   padding: "4px 6px",
-  borderRadius: "4px",
+  borderRadius: "999px",
   border: `1px solid ${C.border}`,
   backgroundColor: C.bg,
   color: C.text,

@@ -136,6 +136,7 @@ export interface FullSyncState {
   activeAuction?: Auction | null;
   activeTask?: Task | null;
   taskTimer?: number;
+  resultsReveal?: { winnerCount: number; revealed: boolean };
 }
 
 export interface Task {
@@ -250,6 +251,18 @@ export interface ClientEvents {
   ) => void;
   "admin:theme": (
     data: { theme: string },
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:set_winner_count": (
+    data: { count: number },
+    cb: (res: { success: boolean; winnerCount?: number; error?: string }) => void
+  ) => void;
+  "admin:reveal_results": (
+    data: Record<string, never>,
+    cb: (res: { success: boolean; error?: string }) => void
+  ) => void;
+  "admin:hide_results": (
+    data: Record<string, never>,
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   // Phase & Transition controls
@@ -432,6 +445,7 @@ export interface ServerEvents {
   /** Global sound bus (server → Live Display ONLY). */
   "sound:play": (data: { type: string; id?: string }) => void;
   "theme:changed": (data: { theme: string }) => void;
+  "results:changed": (data: { winnerCount: number; revealed: boolean }) => void;
 }
 
 // A question made visible to everyone: selected (upcoming), active
