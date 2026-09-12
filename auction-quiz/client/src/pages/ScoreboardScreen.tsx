@@ -474,10 +474,7 @@ export default function ScoreboardScreen() {
     const handleFull = (full: any) => {
       if (full?.scoreboard) handleRefresh(full.scoreboard);
     };
-    const handleThemeChanged = (data: { theme: string }) => {
-      document.documentElement.setAttribute("data-theme", data.theme);
-      localStorage.setItem("theme", data.theme);
-    };
+    // NOTE: theme sync is handled centrally by useGamePhase()/applyTheme().
 
     socket.on("auction:bid_update", refresh);
     socket.on("bid:update" as any, refresh);
@@ -488,7 +485,6 @@ export default function ScoreboardScreen() {
     socket.on("scoreboard:update" as any, handleScoreUpdate);
     socket.on("team:update" as any, refresh);
     socket.on("state:full" as any, handleFull);
-    socket.on("theme:changed", handleThemeChanged);
 
     return () => {
       cancelled = true;
@@ -502,7 +498,6 @@ export default function ScoreboardScreen() {
       socket.off("scoreboard:update" as any, handleScoreUpdate);
       socket.off("team:update" as any, refresh);
       socket.off("state:full" as any, handleFull);
-      socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected, handleRefresh]);
 

@@ -9,6 +9,7 @@ import { questionService } from "../services/question.service";
 import { stateManager } from "../services/phase.service";
 import { timerEngineService } from "../services/timer-engine.service";
 import { manualTimerService } from "../services/manual-timer.service";
+import { settingsService, VALID_THEMES } from "../services/settings.service";
 import { ADMIN_SECRET, ALLOW_REMOTE_ADMIN, isLocalOrHostIp } from "../auth";
 import { getDb, persistDb } from "../db/database";
 import type { ServerEvents, ClientEvents, FullSyncState } from "../types";
@@ -33,7 +34,8 @@ const AUCTION_CONFIG = {
 
 export function setupSocketHandlers(io: Server) {
   const socketTeamMap = new Map<string, string>();
-  let currentTheme = "default"; // Server-stored theme state
+  // Persisted theme state — survives restarts (server/data/settings.json).
+  let currentTheme: string = settingsService.getTheme();
 
   const resetManualTimer = () => {
     const s = manualTimerService.reset();
@@ -745,12 +747,12 @@ export function setupSocketHandlers(io: Server) {
       if (!requireAdmin(cb)) return;
       try {
         const { theme } = data ?? {};
-        if (!theme || !["default", "bidforc"].includes(theme)) {
+        if (!theme || !VALID_THEMES.includes(theme)) {
           cb({ success: false, error: "Invalid theme" });
           return;
         }
-        currentTheme = theme; // Store in server memory
-        io.emit("theme:changed", { theme });
+        currentTheme = settingsService.setTheme(theme); // Persists to disk too
+        io.emit("theme:changed", { theme: currentTheme });
         await broadcastFullState();
         cb({ success: true });
         console.log(`[Theme] Theme changed to: ${theme}`);

@@ -136,21 +136,33 @@ export function BrandHeader({
       >
         <span
           style={{
-            fontFamily: "var(--font-heading, 'Poppins', 'Inter', sans-serif)",
+            fontFamily: "var(--font-wordmark, 'Luckiest Guy', 'Poppins', sans-serif)",
             fontSize: cfg.textSize,
-            fontWeight: 800,
-            letterSpacing: "0.08em",
+            fontWeight: 400,
+            letterSpacing: "0.03em",
             color: inverted ? "#FFFFFF" : "var(--color-primary, #0B3C5D)",
+            textShadow: inverted
+              ? "-1.5px -1.5px 0 rgba(0,0,0,0.4), 1.5px -1.5px 0 rgba(0,0,0,0.4), -1.5px 1.5px 0 rgba(0,0,0,0.4), 1.5px 1.5px 0 rgba(0,0,0,0.4), 3px 3px 6px rgba(0,0,0,0.25)"
+              : "-1.5px -1.5px 0 var(--color-primary-dark, #082C44), 1.5px -1.5px 0 var(--color-primary-dark, #082C44), -1.5px 1.5px 0 var(--color-primary-dark, #082C44), 1.5px 1.5px 0 var(--color-primary-dark, #082C44), 2px 2px 4px rgba(0,0,0,0.12)",
             textTransform: "uppercase",
-            lineHeight: 1.1,
+            lineHeight: 1,
             whiteSpace: "nowrap",
             display: "inline-flex",
-            alignItems: "center",
-            gap: "0.28em",
+            alignItems: "baseline",
+            gap: "0.2em",
           }}
         >
           <span>BID FOR</span>
-          <span style={{ color: "var(--color-accent, #D4AF37)" }}>C</span>
+          <span
+            style={{
+              color: "var(--color-accent, #D4AF37)",
+              fontSize: "1.3em",
+              textShadow:
+                "-1.5px -1.5px 0 var(--color-accent-dark, #B8962E), 1.5px -1.5px 0 var(--color-accent-dark, #B8962E), -1.5px 1.5px 0 var(--color-accent-dark, #B8962E), 1.5px 1.5px 0 var(--color-accent-dark, #B8962E), 3px 3px 0 var(--color-accent-dark, #B8962E), 5px 5px 8px rgba(0,0,0,0.3)",
+            }}
+          >
+            C
+          </span>
         </span>
 
         {subtitle && (

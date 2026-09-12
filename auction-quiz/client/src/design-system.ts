@@ -59,6 +59,7 @@ export const tokens = {
     heading: "var(--font-heading)",
     body: "var(--font-body)",
     mono: "var(--font-mono)",
+    wordmark: "var(--font-wordmark)",
   },
   space: {
     0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 20,

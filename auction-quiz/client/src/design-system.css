@@ -3,37 +3,12 @@
    College Auction Event
    ═══════════════════════════════════════════════════ */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Luckiest+Guy&display=swap");
 
 :root {
-  /* ── Colors ── */
-  --color-primary: #0B3C5D;
-  --color-primary-light: #1A5276;
-  --color-primary-dark: #082C44;
-  --color-accent: #D4AF37;
-  --color-accent-light: #E5C34B;
-  --color-accent-dark: #B8962E;
-  --color-bg: #F8FAFC;
-  --color-surface: #FFFFFF;
-  --color-text: #0F172A;
-  --color-text-secondary: #334155;
-  --color-muted: #64748B;
-  --color-border: #E2E8F0;
-  --color-border-light: #F1F5F9;
-
-  /* ── Semantic ── */
-  --color-success: #22C55E;
-  --color-success-bg: #F0FDF4;
-  --color-success-border: #BBF7D0;
-  --color-warning: #F59E0B;
-  --color-warning-bg: #FFFBEB;
-  --color-warning-border: #FDE68A;
-  --color-danger: #EF4444;
-  --color-danger-bg: #FEF2F2;
-  --color-danger-border: #FECACA;
-  --color-info: #3A7CA5;
-  --color-info-bg: #EFF6FF;
-  --color-info-border: #BFDBFE;
+  /* Color tokens (--color-*) live in theme.css — it defines them per
+     data-theme value, including the bare :root fallback. This file only
+     owns the tokens that stay constant across every theme. */
 
   /* ── Difficulty ── */
   --color-easy-bg: #DCFCE7;
@@ -46,6 +21,7 @@
   /* ── Typography ── */
   --font-heading: "Poppins", "Inter", "Segoe UI", sans-serif;
   --font-body: "Inter", "Segoe UI", sans-serif;
+  --font-wordmark: "Luckiest Guy", "Poppins", "Inter", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
 
   /* ── Spacing (8px grid) ── */

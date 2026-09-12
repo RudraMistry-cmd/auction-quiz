@@ -34,6 +34,14 @@ function categoryLabel(slug: string): string {
   return CATEGORY_LABELS[slug] || slug.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/* ─── Theme options (must match client/src/theme.css data-theme values) ─── */
+const THEME_OPTIONS: Array<{ slug: string; label: string; primary: string; accent: string }> = [
+  { slug: "default", label: "Indigo", primary: "#4338CA", accent: "#06B6D4" },
+  { slug: "bidforc", label: "Bid for C", primary: "#0B3C5D", accent: "#D4AF37" },
+  { slug: "sunrise", label: "Sunrise", primary: "#C2410C", accent: "#0D9488" },
+  { slug: "terminal", label: "Terminal", primary: "#15803D", accent: "#CA8A04" },
+];
+
 /* ─── Reusable Card ─── */
 function Card({ title, children, span, scroll }: { title: string; children: React.ReactNode; span?: number; scroll?: boolean }) {
   return (
@@ -90,6 +98,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     scoreboard: phaseScoreboard,
     winnerCount,
     resultsRevealed,
+    theme: activeTheme,
   } = useGamePhase();
   // NOTE: No sound playback here — admin only broadcasts settings.
   // Playback happens strictly on the Live Display screen.
@@ -364,12 +373,8 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       setPoolStats(stats);
     };
     socket.on("team_pool:update" as any, handlePoolUpdate);
-
-    const handleThemeChanged = (data: { theme: string }) => {
-      document.documentElement.setAttribute("data-theme", data.theme);
-      localStorage.setItem("theme", data.theme);
-    };
-    socket.on("theme:changed", handleThemeChanged);
+    // NOTE: theme sync (state:full + live theme:changed) is handled centrally
+    // by useGamePhase()/applyTheme() so every screen stays in sync for free.
 
     return () => {
       socket.off("state:full" as any, handleFullState);
@@ -385,7 +390,6 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
       socket.off("scoreboard:update" as any, handleScores);
       socket.off("team:update" as any, handleScores);
       socket.off("manual_timer:update", handleTimerUpdate);
-      socket.off("theme:changed", handleThemeChanged);
     };
   }, [socket, connected]);
 
@@ -2012,28 +2016,44 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         </Card>
 
         <Card title="Theme Settings" span={4}>
-          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Switch theme across all connected screens.</p>
-          <div style={{ display: "flex", gap: "8px" }}>
-            {(["default", "bidforc"] as const).map((themeOption) => (
-              <button
-                key={themeOption}
-                onClick={() => {
-                  socket?.emit("admin:theme", { theme: themeOption }, (res) => {
-                    if (!res.success) console.error("[Theme] Failed:", res.error);
-                  });
-                }}
-                style={{
-                  flex: 1, padding: "12px 16px", borderRadius: "0.75rem",
-                  border: `2px solid ${C.border}`,
-                  backgroundColor: C.surface,
-                  cursor: "pointer", transition: "all 0.2s ease",
-                  fontFamily: F.heading, fontWeight: 600, fontSize: "0.85rem",
-                  color: C.text,
-                }}
-              >
-                {themeOption === "default" ? "Default" : "Bid for C"}
-              </button>
-            ))}
+          <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>
+            Switch theme across all connected screens — applies instantly everywhere and becomes the default on next launch.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            {THEME_OPTIONS.map((opt) => {
+              const isActive = activeTheme === opt.slug;
+              return (
+                <button
+                  key={opt.slug}
+                  onClick={() => {
+                    socket?.emit("admin:theme", { theme: opt.slug }, (res) => {
+                      if (!res.success) console.error("[Theme] Failed:", res.error);
+                    });
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "12px 14px", borderRadius: "0.75rem",
+                    border: `2px solid ${isActive ? opt.primary : C.border}`,
+                    backgroundColor: isActive ? `${opt.primary}12` : C.surface,
+                    cursor: "pointer", transition: "all 0.2s ease",
+                    fontFamily: F.heading, fontWeight: 600, fontSize: "0.85rem",
+                    color: C.text,
+                  }}
+                >
+                  <span style={{
+                    width: "20px", height: "20px", borderRadius: "999px", flexShrink: 0,
+                    background: `linear-gradient(135deg, ${opt.primary} 50%, ${opt.accent} 50%)`,
+                    boxShadow: isActive ? `0 0 0 3px ${opt.primary}30` : "none",
+                  }} />
+                  <span style={{ flex: 1, textAlign: "left" }}>{opt.label}</span>
+                  {isActive && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={opt.primary} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </Card>
 

@@ -1,37 +1,72 @@
 /**
- * Theme CSS Variables
+ * Theme CSS Variables — color tokens only (spacing/radius/shadow/fonts stay
+ * in design-system.css since they don't vary by theme).
  *
- * Two themes only: default + bidforc
- * Applied via data-theme attribute on :root
+ * Four light themes, applied via data-theme attribute on :root:
+ *   default  — "Indigo"   — modern indigo + cyan
+ *   bidforc  — "Bid for C" — the event's navy + gold brand theme
+ *   sunrise  — "Sunrise"  — warm amber + teal
+ *   terminal — "Terminal" — deep green + amber (nods to a C/terminal look)
+ *
+ * All four are light themes on purpose — the projector /display routes need
+ * to stay bright and legible in a lit venue.
  */
 
-/* Default Theme */
+/* ── Indigo (default) ── */
 :root,
 :root[data-theme="default"] {
-  /* Colors - Primary (Navy) */
-  --color-primary: #0B3C5D;
-  --color-primary-light: #1A5276;
-  --color-primary-dark: #082C44;
+  --color-primary: #4338CA;
+  --color-primary-light: #6366F1;
+  --color-primary-dark: #312E81;
 
-  /* Colors - Accent (Gold) */
-  --color-accent: #D4AF37;
-  --color-accent-light: #E5C34B;
-  --color-accent-dark: #B8962E;
+  --color-accent: #06B6D4;
+  --color-accent-light: #22D3EE;
+  --color-accent-dark: #0E7490;
 
-  /* Colors - Background & Surface */
   --color-bg: #F8FAFC;
   --color-surface: #FFFFFF;
 
-  /* Colors - Text */
   --color-text: #0F172A;
   --color-text-secondary: #334155;
   --color-muted: #64748B;
 
-  /* Colors - Borders */
   --color-border: #E2E8F0;
   --color-border-light: #F1F5F9;
 
-  /* Colors - Status */
+  --color-success: #22C55E;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-danger: #EF4444;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-info: #3B82F6;
+  --color-info-bg: #EFF6FF;
+  --color-info-border: #BFDBFE;
+}
+
+/* ── Bid for C (navy + gold, the event brand — unchanged) ── */
+:root[data-theme="bidforc"] {
+  --color-primary: #0B3C5D;
+  --color-primary-light: #1A5276;
+  --color-primary-dark: #082C44;
+
+  --color-accent: #D4AF37;
+  --color-accent-light: #E5C34B;
+  --color-accent-dark: #B8962E;
+
+  --color-bg: #F8FAFC;
+  --color-surface: #FFFFFF;
+
+  --color-text: #0F172A;
+  --color-text-secondary: #334155;
+  --color-muted: #64748B;
+
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+
   --color-success: #22C55E;
   --color-success-bg: #F0FDF4;
   --color-success-border: #BBF7D0;
@@ -44,63 +79,74 @@
   --color-info: #3A7CA5;
   --color-info-bg: #EFF6FF;
   --color-info-border: #BFDBFE;
-
-  /* Colors - Difficulty */
-  --color-easy-bg: #DCFCE7;
-  --color-easy-fg: #166534;
-  --color-medium-bg: #FEF9C3;
-  --color-medium-fg: #854D0E;
-  --color-hard-bg: #FEE2E2;
-  --color-hard-fg: #991B1B;
-
-  /* Fonts */
-  --font-heading: 'Poppins', 'Inter', 'Segoe UI', sans-serif;
-  --font-body: 'Inter', 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-  /* Shadows */
-  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
-  --shadow-lg: 0 10px 24px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04);
-  --shadow-xl: 0 20px 40px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.06);
 }
 
-/* Bid for C Event Theme */
-:root[data-theme="bidforc"] {
-  /* Colors - Primary (Darker Navy) */
-  --color-primary: #0f172a;
-  --color-primary-light: #1e293b;
-  --color-primary-dark: #020617;
+/* ── Sunrise (warm amber + teal) ── */
+:root[data-theme="sunrise"] {
+  --color-primary: #C2410C;
+  --color-primary-light: #EA580C;
+  --color-primary-dark: #9A3412;
 
-  /* Colors - Accent (Brighter Gold) */
-  --color-accent: #facc15;
-  --color-accent-light: #fde047;
-  --color-accent-dark: #eab308;
+  --color-accent: #0D9488;
+  --color-accent-light: #14B8A6;
+  --color-accent-dark: #0F766E;
 
-  /* Colors - Background */
-  --color-bg: #f8fafc;
-  --color-surface: #ffffff;
+  --color-bg: #FFFBF5;
+  --color-surface: #FFFFFF;
 
-  /* Colors - Text */
-  --color-text: #0f172a;
-  --color-text-secondary: #334155;
-  --color-muted: #64748b;
+  --color-text: #1C1917;
+  --color-text-secondary: #44403C;
+  --color-muted: #78716C;
 
-  /* Colors - Borders */
-  --color-border: #e2e8f0;
-  --color-border-light: #f1f5f9;
+  --color-border: #E7E0D8;
+  --color-border-light: #F3EEE7;
 
-  /* Colors - Status (Blue glow accent) */
-  --color-info: #3b82f6;
-  --color-info-bg: #eff6ff;
-  --color-info-border: #bfdbfe;
+  --color-success: #22C55E;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-danger: #EF4444;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-info: #0EA5E9;
+  --color-info-bg: #F0F9FF;
+  --color-info-border: #BAE6FD;
+}
 
-  /* Shadows - Enhanced for premium feel */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-  --shadow-lg: 0 10px 24px rgba(0,0,0,0.1), 0 4px 8px rgba(0,0,0,0.04);
-  --shadow-xl: 0 20px 40px rgba(0,0,0,0.12), 0 8px 16px rgba(0,0,0,0.06);
+/* ── Terminal (deep green + amber) ── */
+:root[data-theme="terminal"] {
+  --color-primary: #15803D;
+  --color-primary-light: #16A34A;
+  --color-primary-dark: #14532D;
+
+  --color-accent: #CA8A04;
+  --color-accent-light: #EAB308;
+  --color-accent-dark: #854D0E;
+
+  --color-bg: #F7FAF8;
+  --color-surface: #FFFFFF;
+
+  --color-text: #0F1A13;
+  --color-text-secondary: #33413A;
+  --color-muted: #5F6F67;
+
+  --color-border: #DCE6E0;
+  --color-border-light: #EDF3EF;
+
+  --color-success: #22C55E;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-danger: #EF4444;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-info: #0891B2;
+  --color-info-bg: #ECFEFF;
+  --color-info-border: #A5F3FC;
 }
 
 /* Smooth theme transitions */
@@ -108,7 +154,6 @@
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Subtle premium entrance animation */
 @keyframes fadeUp {
   from {
     opacity: 0;

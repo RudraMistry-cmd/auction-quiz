@@ -9,6 +9,7 @@ dist/
 *.db-journal
 data/*.db
 data/*.db-journal
+data/settings.json
 
 # Env / secrets
 .env

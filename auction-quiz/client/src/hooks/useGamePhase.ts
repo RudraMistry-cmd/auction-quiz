@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { getServerBase } from "./useSocket";
+import { applyTheme } from "../contexts/ThemeContext";
 import type {
   ServerEvents,
   ClientEvents,
@@ -63,6 +64,7 @@ export function useGamePhase() {
   const [activeAuction, setActiveAuction] = useState<any | null>(null);
   const [winnerCount, setWinnerCount] = useState<number>(3);
   const [resultsRevealed, setResultsRevealed] = useState<boolean>(false);
+  const [theme, setTheme] = useState<string>("default");
 
   const seenVersion = useRef(0);
   const hasLiveTaskEvent = useRef(false);
@@ -78,6 +80,10 @@ export function useGamePhase() {
     lastEventTime.current = Date.now();
     if (!full) return;
 
+    if (full.theme) {
+      applyTheme(full.theme);
+      setTheme(full.theme);
+    }
     if (full.phase) setPhase(full.phase);
     if (full.currentBid !== undefined) setCurrentBid(full.currentBid);
     if (full.leadingTeam !== undefined) setLeadingTeam(full.leadingTeam);
@@ -543,6 +549,14 @@ export function useGamePhase() {
       }
     };
 
+    const handleThemeChanged = (data: { theme: string }) => {
+      lastEventTime.current = Date.now();
+      if (data?.theme) {
+        applyTheme(data.theme);
+        setTheme(data.theme);
+      }
+    };
+
     const handleResultsChanged = (data: { winnerCount: number; revealed: boolean }) => {
       lastEventTime.current = Date.now();
       if (typeof data.winnerCount === "number") setWinnerCount(data.winnerCount);
@@ -601,6 +615,7 @@ export function useGamePhase() {
     socket.on("task:paused", handlePaused);
     socket.on("task:resumed", handleResumed);
     socket.on("task:result", handleTaskResult);
+    socket.on("theme:changed" as any, handleThemeChanged);
     socket.on("results:changed" as any, handleResultsChanged);
     socket.on("system:reset" as any, handleSystemReset);
 
@@ -636,6 +651,7 @@ export function useGamePhase() {
       socket.off("task:paused", handlePaused);
       socket.off("task:resumed", handleResumed);
       socket.off("task:result", handleTaskResult);
+      socket.off("theme:changed" as any, handleThemeChanged);
       socket.off("results:changed" as any, handleResultsChanged);
       socket.off("system:reset" as any, handleSystemReset);
     };
@@ -666,5 +682,6 @@ export function useGamePhase() {
     activeAuction,
     winnerCount,
     resultsRevealed,
+    theme,
   };
 }
