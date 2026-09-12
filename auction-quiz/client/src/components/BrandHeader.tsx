@@ -45,9 +45,9 @@ const variantMap: Record<"centered" | "left" | "compact", VariantConfig> = {
     direction: "row",
     align: "center",
     justify: "flex-start",
-    logoSize: 30,
-    textSize: "15px",
-    gap: "8px",
+    logoSize: 54,
+    textSize: "28px",
+    gap: "10px",
     marginBottom: "0px",
   },
 };
