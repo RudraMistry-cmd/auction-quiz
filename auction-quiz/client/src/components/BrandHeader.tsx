@@ -143,7 +143,7 @@ export function BrandHeader({
             color: inverted ? "#FFFFFF" : "var(--color-primary, #0B3C5D)",
             textShadow: inverted
               ? "-1.5px -1.5px 0 rgba(0,0,0,0.4), 1.5px -1.5px 0 rgba(0,0,0,0.4), -1.5px 1.5px 0 rgba(0,0,0,0.4), 1.5px 1.5px 0 rgba(0,0,0,0.4), 3px 3px 6px rgba(0,0,0,0.25)"
-              : "-1.5px -1.5px 0 var(--color-primary-dark, #082C44), 1.5px -1.5px 0 var(--color-primary-dark, #082C44), -1.5px 1.5px 0 var(--color-primary-dark, #082C44), 1.5px 1.5px 0 var(--color-primary-dark, #082C44), 2px 2px 4px rgba(0,0,0,0.12)",
+              : "-2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 0 3px 6px rgba(15,23,42,0.25)",
             textTransform: "uppercase",
             lineHeight: 1,
             whiteSpace: "nowrap",
@@ -158,7 +158,7 @@ export function BrandHeader({
               color: "var(--color-accent, #D4AF37)",
               fontSize: "1.3em",
               textShadow:
-                "-1.5px -1.5px 0 var(--color-accent-dark, #B8962E), 1.5px -1.5px 0 var(--color-accent-dark, #B8962E), -1.5px 1.5px 0 var(--color-accent-dark, #B8962E), 1.5px 1.5px 0 var(--color-accent-dark, #B8962E), 3px 3px 0 var(--color-accent-dark, #B8962E), 5px 5px 8px rgba(0,0,0,0.3)",
+                "-2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 3px 3px 0 var(--color-accent-dark, #B8962E), 5px 5px 10px rgba(15,23,42,0.3)",
             }}
           >
             C
