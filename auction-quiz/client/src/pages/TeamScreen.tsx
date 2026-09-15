@@ -646,7 +646,7 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
         <div style={regContent}>
           <div style={regLeft}>
             <BrandHeader variant="centered" inverted style={{ marginBottom: "16px" }} />
-            <h3 style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1.1rem", color: C.primary, marginBottom: "14px", textAlign: "center" }}>
+            <h3 style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1.1rem", color: "#FFFFFF", marginBottom: "14px", textAlign: "center" }}>
               How Bid for C Works
             </h3>
 
