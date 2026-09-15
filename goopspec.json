@@ -1,0 +1,23 @@
+{
+  "projectName": "auc-c",
+  "defaultModel": "opencode/mimo-v2.5-free",
+  "enforcement": "warn",
+  "memoryEnabled": true,
+  "agentModels": {
+    "orchestrator": "opencode/mimo-v2.5-free",
+    "planner": "opencode/mimo-v2.5-free",
+    "executor-high": "opencode/mimo-v2.5-free",
+    "executor-medium": "opencode/mimo-v2.5-free",
+    "executor-low": "opencode/muse-spark-1.3-contributor-free",
+    "executor-frontend-high": "opencode/mimo-v2.5-free",
+    "executor-frontend-medium": "opencode/mimo-v2.5-free",
+    "executor-frontend-low": "opencode/muse-spark-1.3-contributor-free",
+    "researcher": "opencode/mimo-v2.5-free",
+    "explorer": "opencode/muse-spark-1.3-contributor-free",
+    "verifier": "opencode/mimo-v2.5-free",
+    "wave-verifier": "opencode/mimo-v2.5-free",
+    "tester": "opencode/mimo-v2.5-free",
+    "debugger": "opencode/mimo-v2.5-free",
+    "writer": "opencode/muse-spark-1.3-contributor-free"
+  }
+}

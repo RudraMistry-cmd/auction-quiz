@@ -29,7 +29,6 @@ function run(db: any, sql: string, params: any[] = []): void {
 const AUCTION_CONFIG = {
   startBid: 50,
   increment: 10,
-  duration: 60,
 };
 
 export function setupSocketHandlers(io: Server) {
@@ -91,6 +90,7 @@ export function setupSocketHandlers(io: Server) {
       taskTimer: taskState.task ? taskState.task.timeLeft : undefined,
       theme: currentTheme,
       resultsReveal: stateManager.getResultsReveal(),
+      auctionDuration: settingsService.getAuctionDuration(),
     };
   };
 
@@ -128,6 +128,13 @@ export function setupSocketHandlers(io: Server) {
     getFullSyncState().then((fullState) => {
       socket.emit("state:full", fullState);
     }).catch((err) => console.error("[Socket] Failed to send state:full on connect:", err));
+
+    // Clock sync: timers travel as server timestamps, so a client whose
+    // system clock differs from the host's would otherwise count down from
+    // a different zero. Clients measure the offset against this reply.
+    socket.on("time:sync", (cb) => {
+      if (typeof cb === "function") cb({ serverTime: Date.now() });
+    });
 
     // Handle explicit state requests (e.g. on client reconnect)
     socket.on("state:request", async (cb) => {
@@ -756,6 +763,19 @@ export function setupSocketHandlers(io: Server) {
         await broadcastFullState();
         cb({ success: true });
         console.log(`[Theme] Theme changed to: ${theme}`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
+    socket.on("admin:set_auction_duration", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const duration = settingsService.setAuctionDuration(Number(data?.duration));
+        io.emit("auction:duration_changed", { duration });
+        await broadcastFullState();
+        cb({ success: true, duration });
+        console.log(`[Auction] Round duration set to ${duration}s`);
       } catch (err: any) {
         cb({ success: false, error: err.message || "Failed" });
       }
@@ -1426,9 +1446,18 @@ export function setupSocketHandlers(io: Server) {
     io.emit("manual_timer:update", state);
   });
 
-  // Wire singleton timerEngineService to broadcast every second
+  // Wire singleton timerEngineService to broadcast every second.
+  // auction:timer rides the same tick as timer:update so the two can never
+  // report different remaining values for the same auction.
   timerEngineService.setTickCallback((timers) => {
     io.emit("timer:update", timers);
+    const activeAuction = auctionService.getActiveAuction();
+    if (activeAuction && timers.biddingTimer) {
+      io.emit("auction:timer", {
+        auctionId: activeAuction.auctionId,
+        remaining: timers.biddingTimer.remaining,
+      });
+    }
   });
 
   // (Re)starts the authoritative per-second task ticks. Safe to call
@@ -1457,7 +1486,11 @@ export function setupSocketHandlers(io: Server) {
 
       resetManualTimer();
 
-      const auction = await auctionService.startAuction({ ...AUCTION_CONFIG, ...opts });
+      const auction = await auctionService.startAuction({
+        ...AUCTION_CONFIG,
+        duration: settingsService.getAuctionDuration(),
+        ...opts,
+      });
 
       io.emit("auction:started", auction);
       io.emit("auction:start", auction);
@@ -1467,8 +1500,10 @@ export function setupSocketHandlers(io: Server) {
       // Set phase to bidding and broadcast
       io.emit("phase:changed", stateManager.getGameState());
 
-      // Start 60s bidding timer via singleton timerEngineService
-      const bTimer = timerEngineService.startBidding(60, async () => {
+      // Single authoritative bidding countdown (timerEngineService). Its
+      // per-second tick drives both timer:update and auction:timer, so every
+      // screen counts off the same clock.
+      const bTimer = timerEngineService.startBidding(auction.duration, async () => {
         try {
           resetManualTimer();
           const result = await auctionService.endAuction();
@@ -1532,7 +1567,7 @@ export function setupSocketHandlers(io: Server) {
               await broadcastFullState();
             }
           } else {
-            // EDGE CASE: If 60s timer expires with 0 bids:
+            // EDGE CASE: If the bidding timer expires with 0 bids:
             // - phase = "idle"
             // - do NOT start task timer
             stateManager.auctionClosedIdle(result.auction.auctionId);
@@ -1556,14 +1591,6 @@ export function setupSocketHandlers(io: Server) {
         duration: bTimer.duration,
         remaining: bTimer.remaining,
       });
-
-      // Backward compatible timer ticker
-      auctionService.startTimer(
-        (remaining) => {
-          io.emit("auction:timer", { auctionId: auction.auctionId, remaining });
-        },
-        () => {}
-      );
 
       io.emit("timer:update", timerEngineService.getTimers() as any);
       await broadcastFullState();

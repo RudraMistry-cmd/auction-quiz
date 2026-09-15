@@ -99,6 +99,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     winnerCount,
     resultsRevealed,
     theme: activeTheme,
+    auctionDuration,
   } = useGamePhase();
   // NOTE: No sound playback here — admin only broadcasts settings.
   // Playback happens strictly on the Live Display screen.
@@ -179,6 +180,15 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
   // Manual timer control state
   const [timerDuration, setTimerDuration] = useState(60);
+
+  // Auction round length (server-persisted; draft value while editing)
+  const [durationDraft, setDurationDraft] = useState<string>(String(auctionDuration));
+  const [durationBusy, setDurationBusy] = useState(false);
+  const [durationError, setDurationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDurationDraft(String(auctionDuration));
+  }, [auctionDuration]);
 
   // Sound control state (initialized from persisted local settings; the
   // global toggle/volume broadcast to the Live Display via socket).
@@ -412,6 +422,26 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
         setLastEvent(`Selected Question: ${res.question.id} (${res.question.reward} pts, ${res.question.time}s)`);
       } else {
         setLastEvent(`Error: ${res.error || "Failed to select question"}`);
+      }
+    });
+  };
+
+  const saveAuctionDuration = () => {
+    if (!socket || durationBusy) return;
+    const value = Number(durationDraft);
+    if (!Number.isFinite(value)) {
+      setDurationError("Enter a number");
+      return;
+    }
+    setDurationBusy(true);
+    setDurationError(null);
+    socket.emit("admin:set_auction_duration", { duration: value }, (res) => {
+      setDurationBusy(false);
+      if (res.success) {
+        setLastEvent(`Auction round length set to ${res.duration}s`);
+      } else {
+        setDurationError(res.error || "Failed");
+        setDurationDraft(String(auctionDuration));
       }
     });
   };
@@ -856,6 +886,54 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
             )}
           </div>
 
+          <div style={{
+            display: "flex", alignItems: "center", gap: "10px",
+            padding: "10px 12px", marginBottom: "12px",
+            borderRadius: "0.6rem", border: `1px solid ${C.border}`,
+            backgroundColor: C.surface,
+          }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted }}>
+              Round Length
+            </span>
+            <input
+              type="number"
+              min={5}
+              max={600}
+              value={durationDraft}
+              disabled={isActive || durationBusy}
+              onChange={(e) => setDurationDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveAuctionDuration(); }}
+              style={{
+                width: "80px", padding: "6px 8px", borderRadius: "0.4rem",
+                border: `1px solid ${durationError ? C.danger : C.border}`,
+                backgroundColor: C.bg, color: C.text,
+                fontFamily: F.mono, fontWeight: 700, fontSize: "0.9rem",
+              }}
+            />
+            <span style={{ fontSize: "0.8rem", color: C.muted }}>seconds</span>
+            <button
+              onClick={saveAuctionDuration}
+              disabled={isActive || durationBusy || durationDraft === String(auctionDuration)}
+              style={{
+                ...styles.cancelBtn, padding: "6px 14px", fontSize: "0.8rem",
+                opacity: (isActive || durationBusy || durationDraft === String(auctionDuration)) ? 0.5 : 1,
+                cursor: (isActive || durationBusy || durationDraft === String(auctionDuration)) ? "not-allowed" : "pointer",
+              }}
+            >
+              {durationBusy ? "Saving…" : "Save"}
+            </button>
+            {durationError && (
+              <span style={{ fontSize: "0.75rem", color: C.danger, fontWeight: 600 }}>
+                {durationError}
+              </span>
+            )}
+            {isActive && (
+              <span style={{ fontSize: "0.75rem", color: C.muted }}>
+                (locked while an auction is live)
+              </span>
+            )}
+          </div>
+
           {!startArmed ? (
             <div style={{ display: "flex", gap: "12px" }}>
               <button
@@ -867,7 +945,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   cursor: (isActive || (!phaseQuestion && !selectedQuestionId)) ? "not-allowed" : "pointer",
                 }}
               >
-                {isActive ? "Auction in Progress" : "Start Auction (60s Timer)"}
+                {isActive ? "Auction in Progress" : `Start Auction (${auctionDuration}s Timer)`}
               </button>
               {phase === "ended" && (
                 <button
@@ -881,7 +959,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
             </div>
           ) : (
             <div style={styles.confirmRow}>
-              <span style={styles.confirmText}>Start 60s bidding for question {phaseQuestion?.id || selectedQuestionId}?</span>
+              <span style={styles.confirmText}>Start {auctionDuration}s bidding for question {phaseQuestion?.id || selectedQuestionId}?</span>
               <button onClick={startAuction} disabled={isActive} style={styles.startBtn}>Confirm Start</button>
               <button onClick={() => setStartArmed(false)} disabled={isActive} style={styles.cancelBtn}>Cancel</button>
             </div>
@@ -1724,7 +1802,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
             </div>
           ) : (
             <div style={styles.empty}>
-              No active task. Select a question above and click "Start Auction (60s)".
+              No active task. Select a question above and click "Start Auction ({auctionDuration}s)".
             </div>
           )}
         </Card>

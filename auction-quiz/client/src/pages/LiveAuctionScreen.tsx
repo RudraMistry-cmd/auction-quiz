@@ -148,7 +148,7 @@ export default function LiveAuctionScreen() {
       const startAmount = a?.startBid || 0;
       setCurrentBid(startAmount);
       setLeadingTeam("");
-      setTimer(a?.duration || 60);
+      setTimer(a?.duration ?? 0);
       if (a?.question) setQuestionImage(a.question.image);
     };
 

@@ -1,3 +1,4 @@
 {
-  "theme": "bidforc"
+  "theme": "bidforc",
+  "auctionDuration": 30
 }

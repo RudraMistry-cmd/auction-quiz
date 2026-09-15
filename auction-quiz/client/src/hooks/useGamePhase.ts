@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
-import { getServerBase } from "./useSocket";
+import { getServerBase, serverNow, syncServerClock } from "./useSocket";
 import { applyTheme } from "../contexts/ThemeContext";
 import type {
   ServerEvents,
@@ -26,11 +26,14 @@ export function formatClock(totalSeconds: number): string {
 /**
  * Calculate drift-free remaining seconds using server startTime and duration.
  * remaining = duration - (now - startTime)
+ *
+ * startTime is a server timestamp, so this must measure against the server's
+ * clock — not the local one, which on a LAN can be seconds off.
  */
 export function computeRemaining(timer: TimestampTimer | null | undefined): number {
   if (!timer) return 0;
   if (!timer.isRunning || !timer.startTime) return Math.max(0, Math.round(timer.remaining ?? 0));
-  const elapsedSec = (Date.now() - timer.startTime) / 1000;
+  const elapsedSec = (serverNow() - timer.startTime) / 1000;
   return Math.max(0, Math.ceil(timer.duration - elapsedSec));
 }
 
@@ -65,6 +68,7 @@ export function useGamePhase() {
   const [winnerCount, setWinnerCount] = useState<number>(3);
   const [resultsRevealed, setResultsRevealed] = useState<boolean>(false);
   const [theme, setTheme] = useState<string>("default");
+  const [auctionDuration, setAuctionDuration] = useState<number>(30);
 
   const seenVersion = useRef(0);
   const hasLiveTaskEvent = useRef(false);
@@ -130,6 +134,7 @@ export function useGamePhase() {
       setWinnerCount(full.resultsReveal.winnerCount);
       setResultsRevealed(full.resultsReveal.revealed);
     }
+    if (typeof full.auctionDuration === "number") setAuctionDuration(full.auctionDuration);
     if ((full as any).upcomingQuestion !== undefined) setUpcomingQuestion((full as any).upcomingQuestion);
     if ((full as any).activeQuestion !== undefined) setActiveQuestion((full as any).activeQuestion);
     if (full.activeTask !== undefined) {
@@ -164,6 +169,8 @@ export function useGamePhase() {
       setConnected(true);
       setConnectionStatus("connected");
       lastEventTime.current = Date.now();
+      // Re-measure clock offset on every (re)connect before trusting timestamps.
+      syncServerClock(s);
       // Proactively request full sync state upon connecting / reconnecting
       s.emit("state:request", (res) => {
         if (res) handleFullState(res);
@@ -460,7 +467,7 @@ export function useGamePhase() {
       lastEventTime.current = Date.now();
       noteStructural(t.version);
       setTask(t);
-      setTaskTimer(Math.max(0, Math.ceil((t.endAt - Date.now()) / 1000)));
+      setTaskTimer(Math.max(0, Math.ceil((t.endAt - serverNow()) / 1000)));
       setTaskEnded(false);
       setTaskPaused(false);
       setLastResult(null);
@@ -471,7 +478,7 @@ export function useGamePhase() {
       lastEventTime.current = Date.now();
       noteStructural();
       setPhase("main_task");
-      const initialRemaining = data.endAt ? Math.max(0, Math.ceil((data.endAt - Date.now()) / 1000)) : data.time_limit;
+      const initialRemaining = data.endAt ? Math.max(0, Math.ceil((data.endAt - serverNow()) / 1000)) : data.time_limit;
       setTaskTimer(initialRemaining > 0 ? initialRemaining : data.time_limit);
       setTaskEnded(false);
       setTaskPaused(false);
@@ -484,7 +491,7 @@ export function useGamePhase() {
             teamName: data.teamName,
             finalBid: 0,
             time_limit: data.time_limit,
-            endAt: data.endAt || Date.now() + data.time_limit * 1000,
+            endAt: data.endAt || serverNow() + data.time_limit * 1000,
             paused: false,
             status: "active",
           } as Task;
@@ -528,7 +535,7 @@ export function useGamePhase() {
       setTaskPaused(false);
       setTaskEnded(false);
       setTaskTimer(data.timeLeft);
-      setTask((prev) => (prev ? { ...prev, paused: false, endAt: Date.now() + data.timeLeft * 1000 } : prev));
+      setTask((prev) => (prev ? { ...prev, paused: false, endAt: serverNow() + data.timeLeft * 1000 } : prev));
     };
 
     const handleTaskResult = (r: TaskResultEvent) => {
@@ -555,6 +562,11 @@ export function useGamePhase() {
         applyTheme(data.theme);
         setTheme(data.theme);
       }
+    };
+
+    const handleAuctionDurationChanged = (data: { duration: number }) => {
+      lastEventTime.current = Date.now();
+      if (typeof data?.duration === "number") setAuctionDuration(data.duration);
     };
 
     const handleResultsChanged = (data: { winnerCount: number; revealed: boolean }) => {
@@ -616,6 +628,7 @@ export function useGamePhase() {
     socket.on("task:resumed", handleResumed);
     socket.on("task:result", handleTaskResult);
     socket.on("theme:changed" as any, handleThemeChanged);
+    socket.on("auction:duration_changed" as any, handleAuctionDurationChanged);
     socket.on("results:changed" as any, handleResultsChanged);
     socket.on("system:reset" as any, handleSystemReset);
 
@@ -652,6 +665,7 @@ export function useGamePhase() {
       socket.off("task:resumed", handleResumed);
       socket.off("task:result", handleTaskResult);
       socket.off("theme:changed" as any, handleThemeChanged);
+      socket.off("auction:duration_changed" as any, handleAuctionDurationChanged);
       socket.off("results:changed" as any, handleResultsChanged);
       socket.off("system:reset" as any, handleSystemReset);
     };
@@ -683,5 +697,6 @@ export function useGamePhase() {
     winnerCount,
     resultsRevealed,
     theme,
+    auctionDuration,
   };
 }

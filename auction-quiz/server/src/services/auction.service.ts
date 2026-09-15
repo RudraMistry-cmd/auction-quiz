@@ -4,6 +4,7 @@ import { stateManager } from "./phase.service";
 import { taskService } from "./task.service";
 import { questionService } from "./question.service";
 import { manualTimerService } from "./manual-timer.service";
+import { settingsService } from "./settings.service";
 import type { Auction, Bid, QuestionPayload, Task } from "../types";
 
 const ALLOWED_INCREMENTS = [20, 50];
@@ -32,7 +33,6 @@ export class AuctionService {
   private activeAuction: Auction | null = null;
   private seqCounter: number = 0;
   private lastBidTime: Map<string, number> = new Map();
-  private timerInterval: NodeJS.Timeout | null = null;
   // Serializes bid processing so simultaneous bids can't read the
   // same current bid and produce duplicate amounts.
   private bidLock: Promise<void> = Promise.resolve();
@@ -124,7 +124,7 @@ export class AuctionService {
 
       const startBid = config.startBid ?? 100;
       const increment = config.increment ?? 20;
-      const duration = config.duration ?? 60;
+      const duration = config.duration ?? settingsService.getAuctionDuration();
 
       const auctionId = uuidv4();
       // State machine: auctions may only start from idle or ended.
@@ -324,36 +324,7 @@ export class AuctionService {
     return result;
   }
 
-  startTimer(onTick: (remaining: number) => void, onComplete: () => void) {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-    }
-
-    this.timerInterval = setInterval(() => {
-      if (!this.activeAuction) {
-        this.stopTimer();
-        return;
-      }
-
-      const remaining = Math.max(0, Math.ceil((this.activeAuction.endAt - Date.now()) / 1000));
-      onTick(remaining);
-
-      if (remaining <= 0) {
-        this.stopTimer();
-        onComplete();
-      }
-    }, 1000);
-  }
-
-  stopTimer() {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
-    }
-  }
-
   resetAuction() {
-    this.stopTimer();
     this.activeAuction = null;
     this.lastBidTime.clear();
   }

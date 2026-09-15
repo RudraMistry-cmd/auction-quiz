@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { colors, fontFamily, label as labelStyle, tabular } from "../theme";
 import { formatClock } from "../hooks/useGamePhase";
+import { serverNow } from "../hooks/useSocket";
 import type { Task } from "../shared/types";
 
 export interface TaskTimerProps {
@@ -60,7 +61,7 @@ export default function TaskTimer({
 
   const [remaining, setRemaining] = useState<number>(() => {
     if (propTimeLeft !== undefined) return propTimeLeft;
-    if (effectiveEndAt) return Math.max(0, Math.ceil((effectiveEndAt - Date.now()) / 1000));
+    if (effectiveEndAt) return Math.max(0, Math.ceil((effectiveEndAt - serverNow()) / 1000));
     return effectiveTimeLimit;
   });
 
@@ -78,7 +79,7 @@ export default function TaskTimer({
     }
 
     const updateRemaining = () => {
-      const rem = Math.max(0, Math.ceil((effectiveEndAt - Date.now()) / 1000));
+      const rem = Math.max(0, Math.ceil((effectiveEndAt - serverNow()) / 1000));
       setRemaining(rem);
       if (rem <= 0) {
         onExpire?.();

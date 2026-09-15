@@ -139,6 +139,8 @@ export interface FullSyncState {
   activeTask?: Task | null;
   taskTimer?: number;
   resultsReveal?: { winnerCount: number; revealed: boolean };
+  /** Configured length of a bidding round, in seconds. */
+  auctionDuration?: number;
 }
 
 export interface Task {
@@ -188,6 +190,12 @@ export interface ClientEvents {
   "client:get_scoreboard": (cb: (res: ScoreboardResponse) => void) => void;
   "client:get_game_state": (cb: (res: { success: boolean; gameState?: GameState; error?: string }) => void) => void;
   "state:request": (cb?: (res: FullSyncState) => void) => void;
+  /** Clock-offset probe: reply carries the server's Date.now(). */
+  "time:sync": (cb: (res: { serverTime: number }) => void) => void;
+  "admin:set_auction_duration": (
+    data: { duration: number },
+    cb: (res: { success: boolean; duration?: number; error?: string }) => void
+  ) => void;
   /** Global sound bus: triggers from anywhere, played ONLY on Live Display. */
   "sound:play": (data: { type: string; id?: string }) => void;
   "admin:submit_result": (
@@ -388,6 +396,7 @@ export interface ServerEvents {
   "auction:bid_update": (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
   "bid:update"?: (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
   "auction:timer": (data: { auctionId: string; remaining: number }) => void;
+  "auction:duration_changed": (data: { duration: number }) => void;
   "auction:ended": (data: { auctionId?: string; winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "auction:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "bid:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
