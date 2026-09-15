@@ -645,27 +645,33 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
 
         <div style={regContent}>
           <div style={regLeft}>
-            <BrandHeader variant="centered" inverted style={{ marginBottom: "20px" }} />
-            <p style={{ fontFamily: F.body, fontSize: "clamp(0.95rem, 1.5vw, 1.15rem)", color: "#94A3B8", lineHeight: 1.7, maxWidth: "400px", marginBottom: "32px" }}>
-              Compete in a fast-paced coding auction.
-              Bid strategically, solve under pressure,
-              and climb the leaderboard.
-            </p>
+            <BrandHeader variant="centered" inverted style={{ marginBottom: "16px" }} />
+            <h3 style={{ fontFamily: F.heading, fontWeight: 700, fontSize: "1.1rem", color: C.primary, marginBottom: "14px", textAlign: "center" }}>
+              How Bid for C Works
+            </h3>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "32px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
               {[
-                "Each team starts with 1000 coins",
-                "Bid to win coding challenges",
-                "Solve within time to earn rewards",
-                "Highest reward points wins",
-              ].map((rule, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: C.accent, flexShrink: 0 }} />
-                  <span style={{ fontFamily: F.body, fontSize: "0.9rem", color: "#CBD5E1" }}>{rule}</span>
+                { icon: <CoinIcon size={15} />, text: <>Register — your team gets an auto-assigned name and <strong style={{ color: C.accent }}>1000 coins</strong></> },
+                { icon: <BoltIcon size={15} color={C.accent} />, text: <>Bid on challenges with <strong style={{ color: C.accent }}>+20</strong> or <strong style={{ color: C.accent }}>+50</strong> coin increments</> },
+                { icon: <TargetIcon size={15} color={C.primary} />, text: <>Win the auction to unlock a challenge</> },
+                { icon: <ClockIcon size={15} color={C.primary} />, text: <>Solve within the timer to earn <strong style={{ color: C.success }}>reward points</strong></> },
+                { icon: <PointsIcon size={15} />, text: <>Highest <strong style={{ color: C.success }}>reward points</strong> wins the leaderboard</> },
+              ].map((step, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                  <span style={{ flexShrink: 0, marginTop: "2px" }}>{step.icon}</span>
+                  <span style={{ fontFamily: F.body, fontSize: "0.8rem", color: "#CBD5E1", lineHeight: 1.45 }}>{step.text}</span>
                 </div>
               ))}
             </div>
-            <p style={{ fontFamily: F.body, fontSize: "0.85rem", color: "#64748B", fontStyle: "italic" }}>
+
+            <div style={{ padding: "7px 10px", borderRadius: tokens.radius.sm, backgroundColor: `${C.accent}12`, border: `1px solid ${C.accent}30`, marginBottom: "14px" }}>
+              <span style={{ fontFamily: F.body, fontSize: "0.76rem", color: "#94A3B8", lineHeight: 1.45 }}>
+                <strong style={{ color: C.accent }}>Coins</strong> are for bidding. <strong style={{ color: C.success }}>Reward points</strong> are for winning. Spend wisely.
+              </span>
+            </div>
+
+            <p style={{ fontFamily: F.body, fontSize: "0.82rem", color: "#64748B", fontStyle: "italic" }}>
               Stay sharp. Every bid counts.
             </p>
           </div>
@@ -1585,7 +1591,7 @@ const regHeader: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   gap: "10px",
-  padding: "20px 0",
+  padding: "14px 0",
   borderBottom: "1px solid rgba(255,255,255,0.1)",
 };
 
@@ -1595,7 +1601,7 @@ const regContent: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   gap: "clamp(32px, 5vw, 80px)",
-  padding: "clamp(24px, 4vw, 64px)",
+  padding: "clamp(20px, 3vw, 48px)",
   flexWrap: "wrap",
 };
 
