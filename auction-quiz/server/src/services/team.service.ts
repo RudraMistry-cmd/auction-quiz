@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import { getDb, persistDb } from "../db/database";
 import { teamPoolService } from "./team-pool.service";
+import { settingsService } from "./settings.service";
 import type { Team, TeamSession, TeamRegistration } from "../types";
 
 function queryAll(db: any, sql: string, params: any[] = []): any[] {
@@ -90,6 +91,17 @@ export function sanitizeInput(data: TeamRegistration): TeamRegistration {
   };
 }
 
+/** First "Team N" label not already in use — covers registrations beyond the
+ *  named pool once maxTeams allows more teams than the pool has names for. */
+function claimOverflowName(db: any): string {
+  let n = 1;
+  while (true) {
+    const name = `Team ${n}`;
+    if (!queryOne(db, "SELECT 1 FROM teams WHERE teamName = ?", [name])) return name;
+    n++;
+  }
+}
+
 export class TeamService {
   async register(data: TeamRegistration): Promise<{ team: Team; sessionToken: string } | { error: string; errors?: ValidationError[] }> {
     const db = await getDb();
@@ -135,12 +147,21 @@ export class TeamService {
       return { error: "This phone number is already registered" };
     }
 
-    // Claim next available team name from pool
-    let poolEntry: { id: number; name: string };
+    // Hard registration ceiling, independent of how many names the pool has.
+    const maxTeams = settingsService.getMaxTeams();
+    const currentCount = queryOne(db, "SELECT COUNT(*) as c FROM teams")?.c || 0;
+    if (currentCount >= maxTeams) {
+      return { error: `Registration closed — maximum of ${maxTeams} teams reached` };
+    }
+
+    // Claim next available team name from pool; once the named pool runs dry
+    // but the ceiling above still allows more teams, fall back to "Team N"
+    // rather than rejecting a registration the cap was raised to allow.
+    let teamName: string;
     try {
-      poolEntry = await teamPoolService.claimNextTeamName();
-    } catch (err: any) {
-      return { error: err.message || "All teams are full" };
+      teamName = (await teamPoolService.claimNextTeamName()).name;
+    } catch {
+      teamName = claimOverflowName(db);
     }
 
     const teamId = uuidv4();
@@ -149,7 +170,7 @@ export class TeamService {
     run(db, `
       INSERT INTO teams (teamId, teamName, player1, player2, phone, email, deviceId, bid_coins, reward_points)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1000, 0)
-    `, [teamId, poolEntry.name, sanitized.player1, sanitized.player2, sanitized.phone, sanitized.email, sanitized.deviceId]);
+    `, [teamId, teamName, sanitized.player1, sanitized.player2, sanitized.phone, sanitized.email, sanitized.deviceId]);
 
     run(db, `
       INSERT OR REPLACE INTO device_sessions (deviceId, teamId)

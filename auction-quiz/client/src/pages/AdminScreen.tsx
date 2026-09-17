@@ -100,6 +100,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     resultsRevealed,
     theme: activeTheme,
     auctionDuration,
+    maxTeams,
   } = useGamePhase();
   // NOTE: No sound playback here — admin only broadcasts settings.
   // Playback happens strictly on the Live Display screen.
@@ -170,6 +171,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   );
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [fallbackTeamId, setFallbackTeamId] = useState<string>("");
+  const [fallbackRewardDraft, setFallbackRewardDraft] = useState<string>("");
   const [fallbackBusy, setFallbackBusy] = useState(false);
   const [endRoundBusy, setEndRoundBusy] = useState(false);
 
@@ -189,6 +191,15 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   useEffect(() => {
     setDurationDraft(String(auctionDuration));
   }, [auctionDuration]);
+
+  // Max registered teams (server-persisted; draft value while editing)
+  const [maxTeamsDraft, setMaxTeamsDraft] = useState<string>(String(maxTeams));
+  const [maxTeamsBusy, setMaxTeamsBusy] = useState(false);
+  const [maxTeamsError, setMaxTeamsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMaxTeamsDraft(String(maxTeams));
+  }, [maxTeams]);
 
   // Sound control state (initialized from persisted local settings; the
   // global toggle/volume broadcast to the Live Display via socket).
@@ -446,6 +457,26 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
     });
   };
 
+  const saveMaxTeams = () => {
+    if (!socket || maxTeamsBusy) return;
+    const value = Number(maxTeamsDraft);
+    if (!Number.isFinite(value)) {
+      setMaxTeamsError("Enter a number");
+      return;
+    }
+    setMaxTeamsBusy(true);
+    setMaxTeamsError(null);
+    socket.emit("admin:set_max_teams", { maxTeams: value }, (res) => {
+      setMaxTeamsBusy(false);
+      if (res.success) {
+        setLastEvent(`Max teams set to ${res.maxTeams}`);
+      } else {
+        setMaxTeamsError(res.error || "Failed");
+        setMaxTeamsDraft(String(maxTeams));
+      }
+    });
+  };
+
   const startAuction = async () => {
     try {
       setStartArmed(false);
@@ -642,11 +673,16 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
   const submitFallbackPass = () => {
     if (!socket || !fallbackTeamId || fallbackBusy) return;
+    const reward = Number(fallbackRewardDraft);
+    if (!Number.isFinite(reward) || reward < 0) {
+      setLastEvent("Error: Enter a valid reward point value");
+      return;
+    }
     setFallbackBusy(true);
-    socket.emit("admin:fallback_pass", { teamId: fallbackTeamId }, (res) => {
+    socket.emit("admin:fallback_pass", { teamId: fallbackTeamId, rewardPoints: reward }, (res) => {
       setFallbackBusy(false);
       if (res.success) {
-        setLastEvent("Fallback awarded successfully! Round moved to result display.");
+        setLastEvent(`Fallback awarded (+${reward} pts)! Round moved to result display.`);
         setFallbackTeamId("");
         fetchScoreboard();
       } else {
@@ -787,6 +823,29 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
   const hasExtraTimer = !!(extraTimer && extraTimer.remaining > 0);
   const hasActivePaused = (!isAnyTimerRunning) && (hasTaskTimer || hasExtraTimer);
   const hasWinner = !!(phaseWinner?.teamId || phaseWinner?.teamName);
+
+  // Keep the Timer Purpose selector pointed at whichever timer the current
+  // phase actually needs. Without this, entering a fallback round leaves the
+  // selector stuck on "Task Timer" — which is disabled (no winner context in
+  // fallback), so the Start button looks broken even though the extra timer
+  // itself works fine. Only auto-switch while nothing is running, so it never
+  // yanks the control out from under an admin mid-timer.
+  useEffect(() => {
+    if (isAnyTimerRunning) return;
+    if (phase === "fallback_idle" || phase === "fallback_active") {
+      setTimerPurpose((p) => (p === "extra" ? p : "extra"));
+    } else if (phase === "post_bid_idle" || phase === "main_task") {
+      setTimerPurpose((p) => (p === "task" ? p : "task"));
+    }
+  }, [phase, isAnyTimerRunning]);
+
+  // Default the fallback award amount to the question's own reward each time
+  // a fallback round freshly opens; admin can still edit it before awarding.
+  useEffect(() => {
+    if (phase === "fallback_idle") {
+      setFallbackRewardDraft(String(phaseQuestion?.reward ?? 100));
+    }
+  }, [phase]);
 
   let timerDisplayRemaining = timerDuration;
   let timerStatusText = "Ready / Stopped";
@@ -1395,6 +1454,18 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                   {(["auction_start", "auction_end", "bid_small", "bid_big", "bid_win", "timer_start", "timer_end", "pass", "fail", "tick"] as const).map((name) => (
                     <div key={name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0" }}>
                       <span style={{ fontSize: "0.8rem", color: C.text, fontFamily: "monospace" }}>{name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <button
+                          onClick={() => soundManager.test(name)}
+                          title={`Preview ${name} (local only, not broadcast)`}
+                          style={{
+                            width: "26px", height: "26px", borderRadius: "50%", border: `1px solid ${C.border}`,
+                            backgroundColor: C.bg, color: C.accent, cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem",
+                          }}
+                        >
+                          ▶
+                        </button>
                       <button
                         onClick={() => {
                           const newEnabled = !perSoundEnabled[name];
@@ -1417,6 +1488,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                           transition: "left 0.2s ease", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
                         }} />
                       </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1646,6 +1718,25 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     ))}
                 </select>
 
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, whiteSpace: "nowrap" }}>
+                    Reward Points
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={fallbackRewardDraft}
+                    onChange={(e) => setFallbackRewardDraft(e.target.value)}
+                    disabled={fallbackBusy}
+                    placeholder={String(phaseQuestion?.reward ?? 100)}
+                    style={{
+                      flex: 1, padding: "0.5rem 0.65rem", borderRadius: "0.6rem",
+                      border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
+                      fontFamily: F.mono, fontWeight: 700, fontSize: "0.9rem",
+                    }}
+                  />
+                </div>
+
                 <button
                   onClick={submitFallbackPass}
                   disabled={!fallbackTeamId || fallbackBusy}
@@ -1656,7 +1747,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
                   }}
                 >
-                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                  Award Points (+{fallbackRewardDraft || phaseQuestion?.reward || 100} pts) & End Round
                 </button>
 
                 <button
@@ -1720,6 +1811,25 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     ))}
                 </select>
 
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <label style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted, whiteSpace: "nowrap" }}>
+                    Reward Points
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={fallbackRewardDraft}
+                    onChange={(e) => setFallbackRewardDraft(e.target.value)}
+                    disabled={fallbackBusy}
+                    placeholder={String(phaseQuestion?.reward ?? 100)}
+                    style={{
+                      flex: 1, padding: "0.5rem 0.65rem", borderRadius: "0.6rem",
+                      border: `1px solid ${C.border}`, backgroundColor: C.bg, color: C.text,
+                      fontFamily: F.mono, fontWeight: 700, fontSize: "0.9rem",
+                    }}
+                  />
+                </div>
+
                 <button
                   onClick={submitFallbackPass}
                   disabled={!fallbackTeamId || fallbackBusy}
@@ -1730,7 +1840,7 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
                     opacity: !fallbackTeamId || fallbackBusy ? 0.5 : 1,
                   }}
                 >
-                  Award Points (+{phaseQuestion?.reward ?? 100} pts) & End Round
+                  Award Points (+{fallbackRewardDraft || phaseQuestion?.reward || 100} pts) & End Round
                 </button>
 
                 <button
@@ -2137,6 +2247,52 @@ export default function AdminScreen({ adminSecret }: AdminScreenProps = {}) {
 
         <Card title="Team Management" span={8} scroll>
           <p style={{ color: C.muted, fontSize: "0.8rem", marginBottom: "0.75rem" }}>Edit bid coins and reward points. Changes persist to the database.</p>
+
+          <div style={{
+            display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+            padding: "10px 12px", marginBottom: "12px",
+            borderRadius: "0.6rem", border: `1px solid ${C.border}`,
+            backgroundColor: C.surface,
+          }}>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: C.muted }}>
+              Max Teams
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={maxTeamsDraft}
+              disabled={maxTeamsBusy}
+              onChange={(e) => setMaxTeamsDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveMaxTeams(); }}
+              style={{
+                width: "70px", padding: "6px 8px", borderRadius: "0.4rem",
+                border: `1px solid ${maxTeamsError ? C.danger : C.border}`,
+                backgroundColor: C.bg, color: C.text,
+                fontFamily: F.mono, fontWeight: 700, fontSize: "0.9rem",
+              }}
+            />
+            <button
+              onClick={saveMaxTeams}
+              disabled={maxTeamsBusy || maxTeamsDraft === String(maxTeams)}
+              style={{
+                ...styles.cancelBtn, padding: "6px 14px", fontSize: "0.8rem",
+                opacity: (maxTeamsBusy || maxTeamsDraft === String(maxTeams)) ? 0.5 : 1,
+                cursor: (maxTeamsBusy || maxTeamsDraft === String(maxTeams)) ? "not-allowed" : "pointer",
+              }}
+            >
+              {maxTeamsBusy ? "Saving…" : "Save"}
+            </button>
+            <span style={{ fontSize: "0.75rem", color: C.muted }}>
+              {scoreboard.length} / {maxTeams} registered
+            </span>
+            {maxTeamsError && (
+              <span style={{ fontSize: "0.75rem", color: C.danger, fontWeight: 600 }}>
+                {maxTeamsError}
+              </span>
+            )}
+          </div>
+
           {scoreboard.length === 0 ? (
             <div style={styles.empty}>No teams to manage</div>
           ) : (

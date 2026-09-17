@@ -141,6 +141,8 @@ export interface FullSyncState {
   resultsReveal?: { winnerCount: number; revealed: boolean };
   /** Configured length of a bidding round, in seconds. */
   auctionDuration?: number;
+  /** Hard ceiling on concurrent team registrations. */
+  maxTeams?: number;
 }
 
 export interface Task {
@@ -177,6 +179,8 @@ export interface TaskResultEvent {
   rewardPoints: number; // team's reward_points after applying the result
   rewardGranted: number; // pass only
   coinsDeducted: number; // fail only
+  /** True when this pass was awarded to a fallback team, not the original bid winner. */
+  isFallback?: boolean;
 }
 
 export interface RenderedQuestion {
@@ -201,6 +205,10 @@ export interface ClientEvents {
   "admin:set_auction_duration": (
     data: { duration: number },
     cb: (res: { success: boolean; duration?: number; error?: string }) => void
+  ) => void;
+  "admin:set_max_teams": (
+    data: { maxTeams: number },
+    cb: (res: { success: boolean; maxTeams?: number; error?: string }) => void
   ) => void;
   /** Global sound bus: triggers from anywhere, played ONLY on Live Display. */
   "sound:play": (data: { type: string; id?: string }) => void;
@@ -305,7 +313,7 @@ export interface ClientEvents {
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   "admin:assign_fallback": (
-    data: { teamId: string },
+    data: { teamId: string; rewardPoints?: number },
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   "admin:side_timer_start": (
@@ -378,7 +386,7 @@ export interface ClientEvents {
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   "admin:fallback_pass": (
-    data: { teamId: string },
+    data: { teamId: string; rewardPoints?: number },
     cb: (res: { success: boolean; error?: string }) => void
   ) => void;
   "admin:fallback_fail": (
@@ -403,6 +411,7 @@ export interface ServerEvents {
   "bid:update"?: (data: { auctionId: string; bid: Bid; teamName: string; increment?: number }) => void;
   "auction:timer": (data: { auctionId: string; remaining: number }) => void;
   "auction:duration_changed": (data: { duration: number }) => void;
+  "teams:max_changed": (data: { maxTeams: number }) => void;
   "auction:ended": (data: { auctionId?: string; winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "auction:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;
   "bid:win"?: (data: { winner: { teamId: string; teamName: string } | null; winningBid: number | null }) => void;

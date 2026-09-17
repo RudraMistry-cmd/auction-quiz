@@ -64,7 +64,7 @@ export function useSoundSystem(socket: AnySocket): void {
     const onBidUpdate = (d?: any) =>
       soundManager.playUnique(
         `bid:${d?.auctionId ?? "?"}:${d?.bid?.amount ?? "?"}:${d?.teamName ?? "?"}`,
-        "bid_placed",
+        d?.increment === 50 ? "bid_big" : "bid_small",
         2000
       );
     const onBidWin = (d?: any) => {
@@ -93,11 +93,9 @@ export function useSoundSystem(socket: AnySocket): void {
       );
       lastTaskResultAt.current = Date.now();
     };
-    const onPhaseChanged = (d?: any) => {
-      if (d?.phase === "fallback_idle" || d?.phase === "fallback_active") {
-        playFallbackOnce(`fallback:phase:${d.phase}`);
-      }
-    };
+    // Fallback's "ready" cue plays only when a real timer actually starts
+    // (timer:extra:start / :explicit:/ :side:) — never merely on entering
+    // fallback_idle, which is just standby with no timer running yet.
     const onExtraTimerStart = () => playFallbackOnce("fallback:extra-start");
 
     // Last-10-seconds ticks from socket timer events (event-driven, throttled).
@@ -150,7 +148,7 @@ export function useSoundSystem(socket: AnySocket): void {
     const onSrvBidUpdated = (d?: any) =>
       soundManager.playUnique(
         `bid:${d?.teamName ?? "?"}:${d?.bidAmount ?? "?"}:${d?.increment ?? "?"}`,
-        "bid_placed",
+        d?.increment === 50 ? "bid_big" : "bid_small",
         2000
       );
     const onSrvBidWon = (d?: any) =>
@@ -190,7 +188,6 @@ export function useSoundSystem(socket: AnySocket): void {
       ["timer:end", onTimerEnd],
       ["task:result", onTaskResult],
       ["result:declared", onResultDeclared],
-      ["phase:changed", onPhaseChanged],
       ["timer:extra:start", onExtraTimerStart],
       ["timer:explicit:start", onExtraTimerStart],
       ["timer:side:start", onExtraTimerStart],

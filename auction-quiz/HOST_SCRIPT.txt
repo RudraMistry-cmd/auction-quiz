@@ -1,0 +1,219 @@
+========================================================
+BID FOR C — HOST / ADMIN SCRIPT
+========================================================
+Use this as a speaking guide, not a script to read word-for-word.
+Adjust energy and pacing to the room. Bracketed notes [ ] are cues
+for you, not lines to say out loud.
+
+--------------------------------------------------------
+1. PRE-EVENT / WELCOME (before registration closes)
+--------------------------------------------------------
+"Good [morning/afternoon] everyone, and welcome to BID FOR C!
+
+Today isn't your usual quiz. There are no static teams, no fixed
+turns, and no one just waiting around. Every question up for grabs
+is going to be auctioned — and the loudest bidder doesn't win, the
+smartest one does.
+
+If you haven't registered yet, scan the QR code / go to the link on
+screen right now. Enter your two player names, your email, and your
+phone number. Your team name will be assigned automatically, so no
+time wasted arguing about that.
+
+Every team starts with 1000 coins. Coins are your bidding power —
+spend them to win the right to answer a question. Reward points are
+what actually get you on the leaderboard. Remember that distinction,
+because it matters a lot later: coins get you IN the game, points win
+you the game.
+
+You've got [X] minutes to register. Let's move fast."
+
+[Wait for registrations, watch the admin panel team count]
+
+--------------------------------------------------------
+2. RULES BRIEFING (once registration closes)
+--------------------------------------------------------
+"Alright, registration is closed. Let me walk you through exactly how
+this works, because I will not repeat this later.
+
+One. A question appears on the big screen. You won't see the full
+difficulty or content until the auction for it opens.
+
+Two. When I start the auction, every team can place a bid using their
+coins. Bids go up in increments of 20 or 50 coins — you'll see the
+buttons on your screen. The clock is ticking, so don't sit on it.
+
+Three. When the timer runs out, the highest bidder wins the auction —
+and only that team gets to attempt the question.
+
+Four. Once you win, the actual challenge unlocks and your solve timer
+starts immediately. Solve it correctly within the time limit, and you
+earn reward points. Fail, or run out of time, and you get nothing —
+but your coins are already spent, so bid carefully.
+
+Five. Coins you spend bidding do NOT come back if you lose the
+question. So don't blow your whole balance on the first round because
+it looked exciting.
+
+Six. Difficulty goes up as we go — Super Easy, Easy, Medium, Hard,
+Bonus rounds, Code Fix, Code Completion, and yes — a Jackpot round
+near the end that can flip the entire leaderboard. Save some coins for
+that.
+
+The scoreboard is live and visible throughout, so everyone will always
+know exactly where they stand.
+
+Any questions? [pause] Good. Let's begin."
+
+--------------------------------------------------------
+3. STARTING THE FIRST AUCTION
+--------------------------------------------------------
+"Here we go — first question of the day!
+
+[Trigger: show question category on screen]
+
+This one's a [Super Easy / Easy / Medium / Hard] question, worth
+[reward] points, with a [time] second solve window once someone wins
+it.
+
+Auction... starts... NOW."
+
+[Start auction on admin panel]
+
+--------------------------------------------------------
+4. DURING BIDDING (energy lines / filler while timer runs)
+--------------------------------------------------------
+Use these as needed while a bidding timer is active — read the room,
+don't force every line.
+
+"Coins are moving — who wants this one?"
+"[Team name] just took the lead with [amount] coins!"
+"Ten seconds left — last call on the bidding!"
+"Careful — someone's about to run out of coins to compete with."
+"This is a cheap one, why is nobody bidding?"
+"Big spenders in the back — let's see who really wants it."
+
+--------------------------------------------------------
+5. AUCTION WON — HANDOFF TO THE TASK
+--------------------------------------------------------
+"And the auction goes to [Team Name] for [final bid] coins!
+
+[Team Name], the challenge is live on your screen right now. Your
+timer starts... now. You have [time_limit] seconds. Everyone else,
+watch the big screen — let's see if they can pull it off."
+
+[Start task timer]
+
+--------------------------------------------------------
+6. RESULT DECLARATION
+--------------------------------------------------------
+PASS:
+"Time's up — and it's a PASS! [Team Name] solves it and earns
+[reward points] points. Excellent work. Scoreboard is updating right
+now — check where you stand."
+
+FAIL:
+"And... that's a fail. Tough luck, [Team Name] — the coins are spent,
+but there's no reward this time. Chin up, there's plenty of auction
+left."
+
+FAIL WITH FALLBACK (if used):
+"[Team Name] couldn't crack it in time — but the challenge isn't dead
+yet. [Fallback Team], you're up. Let's see if you can finish what they
+started."
+
+--------------------------------------------------------
+7. TRANSITIONING BETWEEN DIFFICULTY TIERS
+--------------------------------------------------------
+"That wraps up our [Super Easy / Easy] questions. From here on,
+things get tougher — and more expensive. [Medium] tier starts now,
+so budget your coins accordingly."
+
+[For Bonus round]
+"Time for a Bonus round! These questions carry extra reward points,
+so if you've got coins saved up, now's the moment to spend them."
+
+[For Code Fix / Code Completion rounds]
+"This next set is Code Fix / Code Completion — you'll be handed
+broken or incomplete code and have to make it work. Read carefully
+before you bid blind."
+
+[For Jackpot round]
+"This is it — the JACKPOT round. Biggest reward points on the board,
+and this can completely change who's sitting at the top of the
+leaderboard. Whoever wins this auction better be ready to deliver."
+
+--------------------------------------------------------
+8. MID-EVENT BREAK (if scheduled)
+--------------------------------------------------------
+"Let's pause here for a quick [X]-minute break. Grab some water,
+stretch out — the scoreboard isn't going anywhere, and neither is the
+competition. We resume at [time]."
+
+[Resuming]
+"Alright, break's over — everyone back in your seats. Let's pick up
+right where we left off. Scoreboard's on screen if you need a
+reminder of where you stand."
+
+--------------------------------------------------------
+9. FINAL ROUND / LAST QUESTION
+--------------------------------------------------------
+"This is the final question of the day. Whatever happens in the next
+few minutes could decide the entire event, so let's make it count.
+
+Auction... starts... now."
+
+--------------------------------------------------------
+10. SCOREBOARD REVEAL / RESULTS
+--------------------------------------------------------
+"That's the last question done — incredible effort from every single
+team today. Before we reveal the final standings, let's have one
+round of applause for everyone who put their coins, and their code,
+on the line.
+
+[pause for applause]
+
+Alright... let's bring up the final leaderboard."
+
+[Trigger reveal on scoreboard screen]
+
+"In [X]rd place... [Team Name], with [reward points] points!
+In [X]nd place... [Team Name]!
+And taking the WIN today, with [reward points] points... [Team
+Name]! Congratulations!"
+
+--------------------------------------------------------
+11. PRIZE DISTRIBUTION (if applicable)
+--------------------------------------------------------
+"Can our winning teams please come up to the front? Let's get these
+prizes handed out.
+
+[Call each placing team up individually, hand over prizes/certificates]
+
+Let's give them one more round of applause."
+
+--------------------------------------------------------
+12. CLOSING REMARKS
+--------------------------------------------------------
+"That's a wrap on Bid for C! Thank you to every team that registered,
+every team that bid a little too aggressively, and everyone who
+stuck it out till the very end.
+
+A huge thanks to [organizing team / club / sponsors] for making this
+possible, and to everyone helping run the show behind the scenes.
+
+We hope you had as much fun playing as we did building this. Go grab
+some food, catch up with your teammates, and we'll see you at the
+next event. Thank you, and good night!"
+
+--------------------------------------------------------
+QUICK-REFERENCE CHEAT SHEET
+--------------------------------------------------------
+- Starting coins per team: 1000
+- Bid increments: +20 or +50 coins
+- Coins spent on a lost/failed auction are NOT refunded
+- Difficulty ladder: Super Easy -> Easy -> Medium -> Hard -> Bonus ->
+  Code Fix -> Code Completion -> Jackpot
+- Coins = bidding power. Reward points = leaderboard score.
+- Pass = reward points awarded. Fail = coins lost, no points.
+========================================================

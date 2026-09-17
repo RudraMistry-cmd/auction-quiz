@@ -991,11 +991,6 @@ export default function TeamScreen({ sessionToken }: TeamScreenProps = {}) {
                   <span style={questionBadge}>
                     {phase === "main_task" ? "YOUR ACTIVE TASK" : "AUCTION QUESTION"}
                   </span>
-                  {currentQuestion?.id && (
-                    <span style={{ fontFamily: F.mono, fontSize: "0.8rem", color: C.muted, fontWeight: 600 }}>
-                      ID: {currentQuestion.id}
-                    </span>
-                  )}
                 </div>
                 {currentQuestion && (
                   <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>

@@ -501,8 +501,10 @@ export default function ScoreboardScreen() {
     };
   }, [socket, connected, handleRefresh]);
 
-  // Top 5 only — stable memo to avoid unnecessary re-renders
-  const topFive = useMemo(() => sortTeams(teams).slice(0, 5), [teams]);
+  // Top 10 — split into two 5-team columns (left: ranks 1-5, right: ranks 6-10)
+  const topTen = useMemo(() => sortTeams(teams).slice(0, 10), [teams]);
+  const leftColumn = topTen.slice(0, 5);
+  const rightColumn = topTen.slice(5, 10);
   // Final-results reveal: admin-chosen winner count, ranks only (no points/coins).
   const winners = useMemo(() => sortTeams(teams).slice(0, winnerCount), [teams, winnerCount]);
 
@@ -589,31 +591,52 @@ export default function ScoreboardScreen() {
               <div style={accentRule} />
             </div>
 
-            {topFive.length === 0 ? (
+            {topTen.length === 0 ? (
               <div style={empty}>
                 <div style={emptyText}>Waiting for results...</div>
               </div>
             ) : (
               <LayoutGroup>
-                <div style={listWrap}>
-                  {/* Column labels */}
-                  <div style={labelRow}>
-                    <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
-                    <div style={{ width: "150px", textAlign: "right", ...labelStyle }}>POINTS</div>
-                    <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>COINS</div>
+                <div style={twoColumnWrap}>
+                  <div style={columnWrap}>
+                    <div style={labelRow}>
+                      <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
+                      <div style={{ width: "150px", textAlign: "right", ...labelStyle }}>POINTS</div>
+                      <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>COINS</div>
+                    </div>
+
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      {leftColumn.map((t, i) => (
+                        <TeamRow
+                          key={t.teamId}
+                          team={t}
+                          rank={i + 1}
+                          prevRank={prevRanks[t.teamId] ?? 0}
+                          highlight={flashIds.has(t.teamId)}
+                        />
+                      ))}
+                    </AnimatePresence>
                   </div>
 
-                  <AnimatePresence mode="popLayout" initial={false}>
-                    {topFive.map((t, i) => (
-                      <TeamRow
-                        key={t.teamId}
-                        team={t}
-                        rank={i + 1}
-                        prevRank={prevRanks[t.teamId] ?? 0}
-                        highlight={flashIds.has(t.teamId)}
-                      />
-                    ))}
-                  </AnimatePresence>
+                  <div style={columnWrap}>
+                    <div style={labelRow}>
+                      <div style={{ flex: 1, ...labelStyle }}>TEAM</div>
+                      <div style={{ width: "150px", textAlign: "right", ...labelStyle }}>POINTS</div>
+                      <div style={{ width: "120px", textAlign: "right", ...labelStyle }}>COINS</div>
+                    </div>
+
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      {rightColumn.map((t, i) => (
+                        <TeamRow
+                          key={t.teamId}
+                          team={t}
+                          rank={i + 6}
+                          prevRank={prevRanks[t.teamId] ?? 0}
+                          highlight={flashIds.has(t.teamId)}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </LayoutGroup>
             )}
@@ -706,12 +729,23 @@ const accentRule: React.CSSProperties = {
   marginTop: "14px",
 };
 
-const listWrap: React.CSSProperties = {
+const twoColumnWrap: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "row",
+  gap: "28px",
+  width: "100%",
+  maxWidth: "1400px",
+  alignItems: "flex-start",
+  justifyContent: "center",
+};
+
+const columnWrap: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: "12px",
-  width: "100%",
-  maxWidth: "960px",
+  flex: 1,
+  minWidth: 0,
+  maxWidth: "660px",
 };
 
 const winnersListWrap: React.CSSProperties = {

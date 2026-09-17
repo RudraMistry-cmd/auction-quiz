@@ -539,8 +539,10 @@ export class TaskService {
     });
   }
 
-  /** Assign reward to another team (fallback pass -> result_display) */
-  async assignFallbackTeam(teamId: string): Promise<{ fallbackTeam: Team; rewardPoints: number; task: Task }> {
+  /** Assign reward to another team (fallback pass -> result_display).
+   *  rewardOverride lets the admin set a custom point value for this award;
+   *  omitted or invalid falls back to the question's own reward. */
+  async assignFallbackTeam(teamId: string, rewardOverride?: number): Promise<{ fallbackTeam: Team; rewardPoints: number; task: Task }> {
     return this.withLock(async () => {
       const t = this.activeTask;
       if (!t) throw new Error("No active task");
@@ -550,7 +552,10 @@ export class TaskService {
       if (!fallbackTeam) throw new Error("Fallback team not found");
 
       const curQ = stateManager.getCurrentQuestion();
-      const rewardPoints = curQ?.reward ?? (typeof t.defaultReward === "number" ? t.defaultReward : 100);
+      const defaultReward = curQ?.reward ?? (typeof t.defaultReward === "number" ? t.defaultReward : 100);
+      const rewardPoints = (typeof rewardOverride === "number" && Number.isFinite(rewardOverride) && rewardOverride >= 0)
+        ? Math.round(rewardOverride)
+        : defaultReward;
 
       run(db, "BEGIN IMMEDIATE");
       try {

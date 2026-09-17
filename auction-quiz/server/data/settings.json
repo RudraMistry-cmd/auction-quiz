@@ -1,4 +1,5 @@
 {
   "theme": "bidforc",
-  "auctionDuration": 30
+  "auctionDuration": 30,
+  "maxTeams": 10
 }

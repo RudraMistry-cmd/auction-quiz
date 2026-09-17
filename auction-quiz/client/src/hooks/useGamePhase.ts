@@ -69,6 +69,7 @@ export function useGamePhase() {
   const [resultsRevealed, setResultsRevealed] = useState<boolean>(false);
   const [theme, setTheme] = useState<string>("default");
   const [auctionDuration, setAuctionDuration] = useState<number>(30);
+  const [maxTeams, setMaxTeams] = useState<number>(11);
 
   const seenVersion = useRef(0);
   const hasLiveTaskEvent = useRef(false);
@@ -135,6 +136,7 @@ export function useGamePhase() {
       setResultsRevealed(full.resultsReveal.revealed);
     }
     if (typeof full.auctionDuration === "number") setAuctionDuration(full.auctionDuration);
+    if (typeof full.maxTeams === "number") setMaxTeams(full.maxTeams);
     if ((full as any).upcomingQuestion !== undefined) setUpcomingQuestion((full as any).upcomingQuestion);
     if ((full as any).activeQuestion !== undefined) setActiveQuestion((full as any).activeQuestion);
     if (full.activeTask !== undefined) {
@@ -569,6 +571,11 @@ export function useGamePhase() {
       if (typeof data?.duration === "number") setAuctionDuration(data.duration);
     };
 
+    const handleMaxTeamsChanged = (data: { maxTeams: number }) => {
+      lastEventTime.current = Date.now();
+      if (typeof data?.maxTeams === "number") setMaxTeams(data.maxTeams);
+    };
+
     const handleResultsChanged = (data: { winnerCount: number; revealed: boolean }) => {
       lastEventTime.current = Date.now();
       if (typeof data.winnerCount === "number") setWinnerCount(data.winnerCount);
@@ -629,6 +636,7 @@ export function useGamePhase() {
     socket.on("task:result", handleTaskResult);
     socket.on("theme:changed" as any, handleThemeChanged);
     socket.on("auction:duration_changed" as any, handleAuctionDurationChanged);
+    socket.on("teams:max_changed" as any, handleMaxTeamsChanged);
     socket.on("results:changed" as any, handleResultsChanged);
     socket.on("system:reset" as any, handleSystemReset);
 
@@ -666,6 +674,7 @@ export function useGamePhase() {
       socket.off("task:result", handleTaskResult);
       socket.off("theme:changed" as any, handleThemeChanged);
       socket.off("auction:duration_changed" as any, handleAuctionDurationChanged);
+      socket.off("teams:max_changed" as any, handleMaxTeamsChanged);
       socket.off("results:changed" as any, handleResultsChanged);
       socket.off("system:reset" as any, handleSystemReset);
     };
@@ -698,5 +707,6 @@ export function useGamePhase() {
     resultsRevealed,
     theme,
     auctionDuration,
+    maxTeams,
   };
 }

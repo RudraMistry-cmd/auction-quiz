@@ -1,299 +1,119 @@
 [
   {
     "id": "super_easy_1",
-    "title": "Sum of Digits",
+    "title": "Swap Without Third Variable",
     "category": "super_easy",
     "image": "super_easy_1.jpg",
-    "reward": 15,
-    "time": 120,
-    "used": false
+    "reward": 100,
+    "time": 180,
+    "used": true
   },
   {
     "id": "super_easy_2",
-    "title": "Count Even Numbers",
+    "title": "String Length (While Loop)",
     "category": "super_easy",
     "image": "super_easy_2.jpg",
-    "reward": 15,
-    "time": 120,
+    "reward": 100,
+    "time": 240,
     "used": false
   },
   {
     "id": "super_easy_3",
-    "title": "Reverse a Number",
+    "title": "Digit Count (While Loop)",
     "category": "super_easy",
     "image": "super_easy_3.jpg",
-    "reward": 15,
-    "time": 120,
+    "reward": 100,
+    "time": 300,
     "used": false
   },
   {
     "id": "super_easy_4",
-    "title": "Largest Element",
+    "title": "Sum of Digits",
     "category": "super_easy",
     "image": "super_easy_4.jpg",
-    "reward": 15,
-    "time": 120,
+    "reward": 100,
+    "time": 300,
     "used": false
   },
   {
     "id": "super_easy_5",
-    "title": "Character Counter",
+    "title": "Counting vowels",
     "category": "super_easy",
     "image": "super_easy_5.jpg",
-    "reward": 15,
-    "time": 120,
+    "reward": 100,
+    "time": 300,
     "used": false
   },
   {
     "id": "easy_1",
-    "title": "Second Largest",
+    "title": "Second Largest Element",
     "category": "easy",
     "image": "easy_1.jpg",
-    "reward": 30,
-    "time": 150,
+    "reward": 100,
+    "time": 300,
     "used": false
   },
   {
     "id": "easy_2",
-    "title": "Remove Duplicates",
+    "title": "Sum of Even and Odd Numbers",
     "category": "easy",
     "image": "easy_2.jpg",
-    "reward": 30,
-    "time": 150,
-    "used": false
-  },
-  {
-    "id": "easy_3",
-    "title": "Frequency of Elements",
-    "category": "easy",
-    "image": "easy_3.jpg",
-    "reward": 30,
-    "time": 150,
-    "used": false
-  },
-  {
-    "id": "easy_4",
-    "title": "Palindrome String",
-    "category": "easy",
-    "image": "easy_4.jpg",
-    "reward": 30,
-    "time": 150,
-    "used": false
-  },
-  {
-    "id": "easy_5",
-    "title": "Missing Number",
-    "category": "easy",
-    "image": "easy_5.jpg",
-    "reward": 30,
-    "time": 150,
+    "reward": 150,
+    "time": 300,
     "used": false
   },
   {
     "id": "medium_1",
-    "title": "Array Rotation",
+    "title": "Reverse Integer + Palindrome Check",
     "category": "medium",
     "image": "medium_1.jpg",
-    "reward": 60,
-    "time": 210,
+    "reward": 100,
+    "time": 240,
     "used": false
   },
   {
     "id": "medium_2",
-    "title": "First Non-Repeating Character",
+    "title": "Uppercase Triangle Pattern",
     "category": "medium",
     "image": "medium_2.jpg",
-    "reward": 60,
-    "time": 210,
+    "reward": 150,
+    "time": 300,
     "used": false
   },
   {
     "id": "medium_3",
-    "title": "Maximum Subarray Sum",
+    "title": "Hollow Square Pattern",
     "category": "medium",
     "image": "medium_3.jpg",
-    "reward": 60,
-    "time": 210,
-    "used": false
-  },
-  {
-    "id": "medium_4",
-    "title": "Merge Two Sorted Arrays",
-    "category": "medium",
-    "image": "medium_4.jpg",
-    "reward": 60,
-    "time": 210,
-    "used": false
-  },
-  {
-    "id": "medium_5",
-    "title": "Matrix Boundary Sum",
-    "category": "medium",
-    "image": "medium_5.jpg",
-    "reward": 60,
-    "time": 210,
+    "reward": 100,
+    "time": 300,
     "used": false
   },
   {
     "id": "hard_1",
-    "title": "Array Shift Without Extra Array",
+    "title": "No-Semicolon Print",
     "category": "hard",
     "image": "hard_1.jpg",
-    "reward": 115,
-    "time": 270,
-    "used": false
-  },
-  {
-    "id": "hard_2",
-    "title": "Linked List Middle Element",
-    "category": "hard",
-    "image": "hard_2.jpg",
-    "reward": 115,
-    "time": 270,
-    "used": false
-  },
-  {
-    "id": "hard_3",
-    "title": "Remove Consecutive Duplicates",
-    "category": "hard",
-    "image": "hard_3.jpg",
-    "reward": 115,
-    "time": 270,
-    "used": false
-  },
-  {
-    "id": "hard_4",
-    "title": "Rotate Matrix",
-    "category": "hard",
-    "image": "hard_4.jpg",
-    "reward": 115,
-    "time": 270,
-    "used": false
-  },
-  {
-    "id": "hard_5",
-    "title": "Linked List Reverse",
-    "category": "hard",
-    "image": "hard_5.jpg",
-    "reward": 115,
-    "time": 270,
+    "reward": 100,
+    "time": 180,
     "used": false
   },
   {
     "id": "bonus_1",
-    "title": "Missing + Duplicate Number",
+    "title": "Debug the Program",
     "category": "bonus",
     "image": "bonus_1.jpg",
-    "reward": 75,
-    "time": 180,
+    "reward": 100,
+    "time": 240,
     "used": false
-  },
-  {
-    "id": "bonus_2",
-    "title": "Longest Consecutive Sequence",
-    "category": "bonus",
-    "image": "bonus_2.jpg",
-    "reward": 75,
-    "time": 180,
-    "used": false
-  },
-  {
-    "id": "bonus_3",
-    "title": "Balanced Brackets",
-    "category": "bonus",
-    "image": "bonus_3.jpg",
-    "reward": 75,
-    "time": 180,
-    "used": false
-  },
-  {
-    "id": "bonus_4",
-    "title": "Majority Element",
-    "category": "bonus",
-    "image": "bonus_4.jpg",
-    "reward": 75,
-    "time": 180,
-    "used": false
-  },
-  {
-    "id": "jackpot_1",
-    "title": "Spiral Matrix",
-    "category": "jackpot",
-    "image": "jackpot_1.jpg",
-    "reward": 500,
-    "time": 300,
-    "used": false
-  },
-  {
-    "id": "jackpot_2",
-    "title": "Longest Substring Without Repeating Characters",
-    "category": "jackpot",
-    "image": "jackpot_2.jpg",
-    "reward": 750,
-    "time": 300,
-    "used": false
-  },
-  {
-    "id": "jackpot_3",
-    "title": "Merge Overlapping Intervals",
-    "category": "jackpot",
-    "image": "jackpot_3.jpg",
-    "reward": 1000,
-    "time": 300,
-    "used": false
-  },
-  {
-    "id": "jackpot_4",
-    "title": "Linked List Loop Detection",
-    "category": "jackpot",
-    "image": "jackpot_4.jpg",
-    "reward": 1000,
-    "time": 300,
-    "used": false
-  },
-  {
-    "id": "code_fix_1",
-    "title": "Find Maximum",
-    "category": "code_fix",
-    "image": "code_fix_1.jpg",
-    "reward": 30,
-    "time": 150,
-    "used": false
-  },
-  {
-    "id": "code_fix_2",
-    "title": "Reverse Array",
-    "category": "code_fix",
-    "image": "code_fix_2.jpg",
-    "reward": 40,
-    "time": 150,
-    "used": false
-  },
-  {
-    "id": "code_fix_3",
-    "title": "Pointer Trick",
-    "category": "code_fix",
-    "image": "code_fix_3.jpg",
-    "reward": 50,
-    "time": 150,
-    "used": true
   },
   {
     "id": "code_completion_1",
-    "title": "Array Rotation",
+    "title": "Arrange the Factorial Program",
     "category": "code_completion",
     "image": "code_completion_1.jpg",
-    "reward": 60,
-    "time": 240,
-    "used": false
-  },
-  {
-    "id": "code_completion_2",
-    "title": "Linked List",
-    "category": "code_completion",
-    "image": "code_completion_2.jpg",
-    "reward": 60,
-    "time": 240,
+    "reward": 150,
+    "time": 180,
     "used": false
   }
 ]

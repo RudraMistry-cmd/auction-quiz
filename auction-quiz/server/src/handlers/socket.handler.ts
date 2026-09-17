@@ -91,6 +91,7 @@ export function setupSocketHandlers(io: Server) {
       theme: currentTheme,
       resultsReveal: stateManager.getResultsReveal(),
       auctionDuration: settingsService.getAuctionDuration(),
+      maxTeams: settingsService.getMaxTeams(),
     };
   };
 
@@ -781,6 +782,19 @@ export function setupSocketHandlers(io: Server) {
       }
     });
 
+    socket.on("admin:set_max_teams", async (data, cb) => {
+      if (!requireAdmin(cb)) return;
+      try {
+        const maxTeams = settingsService.setMaxTeams(Number(data?.maxTeams));
+        io.emit("teams:max_changed", { maxTeams });
+        await broadcastFullState();
+        cb({ success: true, maxTeams });
+        console.log(`[Team] Max teams set to ${maxTeams}`);
+      } catch (err: any) {
+        cb({ success: false, error: err.message || "Failed" });
+      }
+    });
+
     // ─── Final Results Reveal (admin-controlled, independent of round phase) ───
     socket.on("admin:set_winner_count", async (data, cb) => {
       if (!requireAdmin(cb)) return;
@@ -1176,7 +1190,7 @@ export function setupSocketHandlers(io: Server) {
         timerEngineService.stopMainTask();
         timerEngineService.stopExtraTimer();
         const winner = stateManager.getWinningTeam();
-        const r = await taskService.assignFallbackTeam(data.teamId);
+        const r = await taskService.assignFallbackTeam(data.teamId, data.rewardPoints);
         const scoreboard = await teamService.getScoreboard();
         io.emit("task:result", {
           taskId: r.task.taskId,
@@ -1187,6 +1201,7 @@ export function setupSocketHandlers(io: Server) {
           rewardPoints: r.fallbackTeam.reward_points,
           rewardGranted: r.rewardPoints,
           coinsDeducted: 0,
+          isFallback: true,
         });
         io.emit("result:declared", {
           result: "fallback_pass",
@@ -1221,7 +1236,7 @@ export function setupSocketHandlers(io: Server) {
         timerEngineService.stopMainTask();
         timerEngineService.stopExtraTimer();
         const winner = stateManager.getWinningTeam();
-        const r = await taskService.assignFallbackTeam(data.teamId);
+        const r = await taskService.assignFallbackTeam(data.teamId, data.rewardPoints);
         const scoreboard = await teamService.getScoreboard();
         io.emit("task:result", {
           taskId: r.task.taskId,
@@ -1232,6 +1247,7 @@ export function setupSocketHandlers(io: Server) {
           rewardPoints: r.fallbackTeam.reward_points,
           rewardGranted: r.rewardPoints,
           coinsDeducted: 0,
+          isFallback: true,
         });
         io.emit("result:declared", {
           result: "fallback_pass",

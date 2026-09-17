@@ -15,14 +15,20 @@ export const MIN_AUCTION_DURATION = 5;
 export const MAX_AUCTION_DURATION = 600;
 export const DEFAULT_AUCTION_DURATION = 30;
 
+export const MIN_MAX_TEAMS = 1;
+export const MAX_MAX_TEAMS = 200;
+export const DEFAULT_MAX_TEAMS = 11;
+
 interface Settings {
   theme: ThemeName;
   auctionDuration: number;
+  maxTeams: number;
 }
 
 const DEFAULT_SETTINGS: Settings = {
   theme: "default",
   auctionDuration: DEFAULT_AUCTION_DURATION,
+  maxTeams: DEFAULT_MAX_TEAMS,
 };
 
 function isValidDuration(value: unknown): value is number {
@@ -31,6 +37,15 @@ function isValidDuration(value: unknown): value is number {
     Number.isFinite(value) &&
     value >= MIN_AUCTION_DURATION &&
     value <= MAX_AUCTION_DURATION
+  );
+}
+
+function isValidMaxTeams(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= MIN_MAX_TEAMS &&
+    value <= MAX_MAX_TEAMS
   );
 }
 
@@ -44,6 +59,9 @@ function readSettings(): Settings {
           auctionDuration: isValidDuration(raw.auctionDuration)
             ? Math.round(raw.auctionDuration)
             : DEFAULT_SETTINGS.auctionDuration,
+          maxTeams: isValidMaxTeams(raw.maxTeams)
+            ? Math.round(raw.maxTeams)
+            : DEFAULT_SETTINGS.maxTeams,
         };
       }
     }
@@ -95,6 +113,20 @@ class SettingsService {
     this.settings = { ...this.settings, auctionDuration: value };
     writeSettings(this.settings);
     return this.settings.auctionDuration;
+  }
+
+  public getMaxTeams(): number {
+    return this.settings.maxTeams;
+  }
+
+  public setMaxTeams(count: number): number {
+    const value = Math.round(Number(count));
+    if (!isValidMaxTeams(value)) {
+      throw new Error(`Max teams must be between ${MIN_MAX_TEAMS} and ${MAX_MAX_TEAMS}`);
+    }
+    this.settings = { ...this.settings, maxTeams: value };
+    writeSettings(this.settings);
+    return this.settings.maxTeams;
   }
 }
 

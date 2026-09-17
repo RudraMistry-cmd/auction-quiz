@@ -103,6 +103,19 @@ export class TeamPoolService {
       }
     }
 
+    // Reconcile: drop pool rows that were removed from the source file (e.g.
+    // the pool was trimmed from 20 names to 10). Never touch a row currently
+    // claimed by a live team — that team keeps its name; only the now-unused
+    // slot for future assignment goes away.
+    const currentNames = entries.map((e) => e.name);
+    if (currentNames.length > 0) {
+      const placeholders = currentNames.map(() => "?").join(",");
+      run(db, `
+        DELETE FROM team_pool
+        WHERE is_assigned = 0 AND name NOT IN (${placeholders})
+      `, currentNames);
+    }
+
     // Reconcile assignments: any name in `teams` MUST have is_assigned = 1
     run(db, `
       UPDATE team_pool SET is_assigned = 1 

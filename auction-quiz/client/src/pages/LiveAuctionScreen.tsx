@@ -21,6 +21,7 @@ interface ResultData {
   result: "pass" | "fail";
   teamName: string;
   points?: number;
+  isFallback?: boolean;
 }
 
 function getQuestionImageUrl(imagePath?: string | null): string {
@@ -186,11 +187,17 @@ export default function LiveAuctionScreen() {
     };
 
     // 5. Result Declared / Task Result (State 3)
-    const handleResultDeclared = (data: { result: "pass" | "fail"; teamName: string; points?: number }) => {
+    const handleResultDeclared = (data: { result: "pass" | "fail" | "fallback_pass" | "fallback_fail"; teamName: string; points?: number }) => {
+      // The server also uses "fallback_pass"/"fallback_fail" here, which
+      // don't match the "pass"/"fail" the result card checks against —
+      // normalize so a fallback win still renders as a win, not a failure.
+      const isFallback = data.result === "fallback_pass" || data.result === "fallback_fail";
+      const normalized: "pass" | "fail" = data.result === "fail" || data.result === "fallback_fail" ? "fail" : "pass";
       setResultData({
-        result: data.result,
+        result: normalized,
         teamName: data.teamName,
         points: data.points,
+        isFallback,
       });
 
       // State 4: Auto-reset after 5.0s
@@ -205,6 +212,7 @@ export default function LiveAuctionScreen() {
         result: data.result,
         teamName: data.teamName,
         points: data.rewardGranted,
+        isFallback: data.isFallback,
       });
 
       if (autoResetTimeoutRef.current) clearTimeout(autoResetTimeoutRef.current);
@@ -558,7 +566,7 @@ export default function LiveAuctionScreen() {
                   FALLBACK OPEN
                 </div>
                 <span style={{ fontSize: "0.8rem", color: C.muted, marginTop: "4px" }}>
-                  Primary team failed • Open to all teams
+                  Primary team failed
                 </span>
               </div>
 
@@ -645,9 +653,6 @@ export default function LiveAuctionScreen() {
                 <div style={{ fontFamily: F.heading, fontWeight: 900, fontSize: "clamp(1.2rem, 1.8vw, 1.5rem)", color: C.text, lineHeight: 1.2 }}>
                   SOLVING IN PROGRESS
                 </div>
-                <span style={{ fontSize: "0.8rem", color: C.muted, marginTop: "4px" }}>
-                  Other teams can solve now
-                </span>
               </div>
 
               {/* Extra Timer Box */}
@@ -699,7 +704,14 @@ export default function LiveAuctionScreen() {
                     resultData.result === "pass" ? (
                       <>
                         <CheckCircleIcon size={26} color={C.success} />
-                        {resultData.teamName} PASSED
+                        {resultData.isFallback
+                          ? `${resultData.teamName} WINS THE FALLBACK!`
+                          : `${resultData.teamName} PASSED`}
+                      </>
+                    ) : resultData.isFallback ? (
+                      <>
+                        <XCircleIcon size={26} color={C.danger} />
+                        FALLBACK CLOSED — NO TEAM SOLVED
                       </>
                     ) : (
                       <>

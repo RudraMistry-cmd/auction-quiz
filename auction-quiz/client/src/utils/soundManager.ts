@@ -20,6 +20,7 @@
 export type SoundName =
   | "auction_start"
   | "bid_placed"
+  | "bid_placed_big"
   | "bid_win"
   | "timer_tick"
   | "timer_end"
@@ -33,7 +34,7 @@ const ALIASES: Record<string, SoundName> = {
   auction_start: "auction_start",
   auction_end: "result_show",
   bid_small: "bid_placed",
-  bid_big: "bid_placed",
+  bid_big: "bid_placed_big",
   bid_placed: "bid_placed",
   bid: "bid_placed",
   bid_win: "bid_win",
@@ -62,6 +63,7 @@ export function canonicalSound(name: string): SoundName | null {
 const SOUND_FILES: Record<SoundName, { sources: string[] }> = {
   auction_start: { sources: ["/sounds/auction_start"] },
   bid_placed: { sources: ["/sounds/bid_small", "/sounds/bid_placed"] },
+  bid_placed_big: { sources: ["/sounds/bid_big", "/sounds/bid_small", "/sounds/bid_placed"] },
   bid_win: { sources: ["/sounds/bid_win", "/sounds/success"] },
   timer_tick: { sources: ["/sounds/tick"] },
   timer_end: { sources: ["/sounds/timer_end", "/sounds/auction_end"] },
@@ -80,6 +82,7 @@ function baseCandidates(base: string): string[] {
 const SOUND_VOLUME: Record<SoundName, number> = {
   auction_start: 0.8,
   bid_placed: 0.35,
+  bid_placed_big: 0.55,
   bid_win: 0.9,
   timer_tick: 0.25,
   timer_end: 0.9,
@@ -93,6 +96,7 @@ const SOUND_VOLUME: Record<SoundName, number> = {
 const THROTTLE_MS: Record<SoundName, number> = {
   auction_start: 1500,
   bid_placed: 200,
+  bid_placed_big: 200,
   bid_win: 1500,
   timer_tick: 900,
   timer_end: 2500,
